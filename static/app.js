@@ -162,7 +162,16 @@
     stale: false,     // editor changed since the last run
     dirty: false,     // editor differs from the loaded example
     running: false,
+    runContext: null, // extra fields for /run, e.g. {level: "c1"} while playing a level
   };
+
+  // Tiny event hub so game.js can react to runs without touching this file's internals.
+  const listeners = {};
+  function emit(type, detail) {
+    for (const fn of listeners[type] || []) {
+      try { fn(detail); } catch (err) { console.error(err); }
+    }
+  }
 
   const examples = JSON.parse($("#examples-data").textContent);
 
@@ -174,7 +183,7 @@
 
   // --------------------------------------------------------------------- tabs
 
-  const TABS = ["tokens", "ast", "bytecode", "output"];
+  const TABS = ["level", "tokens", "ast", "bytecode", "output"]; // "level" is only shown while playing
 
   function selectTab(name, { focus = false } = {}) {
     state.tab = name;
@@ -188,18 +197,20 @@
     if (focus) $(`#tab-${name}`).focus();
     applyStepHighlight();
     if (name === "bytecode") scrollCurrentInstructionIntoView();
+    emit("tab", name);
   }
 
   for (const t of TABS) {
     $(`#tab-${t}`).addEventListener("click", () => selectTab(t));
   }
   $(".tabs").addEventListener("keydown", (e) => {
-    const i = TABS.indexOf(state.tab);
+    const visible = TABS.filter((t) => !$(`#tab-${t}`).hidden);
+    const i = visible.indexOf(state.tab);
     let next = null;
-    if (e.key === "ArrowRight") next = TABS[(i + 1) % TABS.length];
-    else if (e.key === "ArrowLeft") next = TABS[(i - 1 + TABS.length) % TABS.length];
-    else if (e.key === "Home") next = TABS[0];
-    else if (e.key === "End") next = TABS[TABS.length - 1];
+    if (e.key === "ArrowRight") next = visible[(i + 1) % visible.length];
+    else if (e.key === "ArrowLeft") next = visible[(i - 1 + visible.length) % visible.length];
+    else if (e.key === "Home") next = visible[0];
+    else if (e.key === "End") next = visible[visible.length - 1];
     if (next) {
       e.preventDefault();
       selectTab(next, { focus: true });
@@ -223,7 +234,7 @@
       const response = await fetch("/run", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ source: editor.getValue() }),
+        body: JSON.stringify({ ...(state.runContext || {}), source: editor.getValue() }),
       });
       let body = null;
       try { body = await response.json(); } catch { /* not JSON */ }
@@ -257,7 +268,8 @@
   document.addEventListener("keydown", (e) => {
     if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
       e.preventDefault();
-      run();
+      if (e.shiftKey) emit("check-shortcut");
+      else run();
     }
   });
 
@@ -273,7 +285,9 @@
     editor.unmark("hover");
     editor.unmark("step");
     editor.unmark("error");
-    if (result.error && result.error.line) editor.mark("error", result.error.line, "cm-line-error");
+    if (result.error && result.error.line && !result.error.in_test_code) {
+      editor.mark("error", result.error.line, "cm-line-error");
+    }
 
     renderTokens();
     renderAst();
@@ -282,8 +296,33 @@
     updateBadges();
     updateStatus(elapsed);
 
-    if (result.error) selectTab("output"); // errors are always shown in the Output panel
+    if (result.error || state.tab === "level") selectTab("output"); // errors are always shown in Output
     applyStepHighlight();
+    emit("result", { result, context: state.runContext, source: editor.getValue() });
+  }
+
+  // Snapshot the panels' first-run content so results can be cleared later.
+  const pristine = {};
+  for (const id of ["tokens-body", "ast-body", "bytecode-body"]) pristine[id] = $(`#${id}`).cloneNode(true);
+
+  /** Forget the last run and show every panel's empty state again. */
+  function clearResults() {
+    state.result = null;
+    state.step = 0;
+    state.stale = false;
+    // Swap the children, not the containers, so their event listeners survive.
+    for (const [id, node] of Object.entries(pristine)) $(`#${id}`).replaceChildren(...node.cloneNode(true).childNodes);
+    $("#ast-toolbar").hidden = true;
+    $("#bytecode-toolbar").hidden = true;
+    $("#output-empty").hidden = false;
+    $("#output-result").hidden = true;
+    $("#stale-note").hidden = true;
+    for (const t of ["tokens", "ast", "bytecode", "output"]) $(`#badge-${t}`).hidden = true;
+    editor.unmark("hover");
+    editor.unmark("step");
+    editor.unmark("error");
+    setStatus("Ready", null);
+    $("#status-meta").textContent = "";
   }
 
   // ------------------------------------------------------------------ status
@@ -310,7 +349,7 @@
         ? `${plural(after, "instruction")} (${fmt(before)} before optimizing)`
         : plural(r.bytecode.length, "instruction"));
     }
-    if (r.trace && r.trace.length) bits.push(`${fmt(r.trace.length)}${r.trace_truncated ? "+" : ""} VM steps`);
+    if (r.steps) bits.push(`${fmt(r.steps)} VM steps`);
     if (r.output && r.output.length) bits.push(`${plural(r.output.length, "line")} printed`);
     $("#status-meta").textContent = bits.join("  ·  ");
   }
@@ -555,6 +594,13 @@
     }
     $("#console-count").textContent = r.output.length ? `· ${plural(r.output.length, "line")}` : "";
 
+    const note = $("#harness-note");
+    note.hidden = !r.harness;
+    if (r.harness) {
+      note.replaceChildren("Ran with the level's example test: ", el("code", null, r.harness.label || "no inputs"),
+        ". Check runs every test.");
+    }
+
     const slot = $("#error-slot");
     slot.replaceChildren();
     if (r.error) slot.append(errorBox(r.error, r.output.length));
@@ -574,12 +620,14 @@
     return el("div", { class: "error-box", role: "alert" },
       el("div", { class: "error-head" },
         el("span", { class: "error-stage" }, STAGE_LABEL[err.stage] || "Error"),
-        err.line
-          ? el("button", {
-              class: "error-line", type: "button", title: "Show this line in the editor",
-              onclick: () => editor.goTo(err.line),
-            }, `line ${err.line}`)
-          : null),
+        err.in_test_code
+          ? el("span", { class: "error-line is-static" }, "in the test code")
+          : err.line
+            ? el("button", {
+                class: "error-line", type: "button", title: "Show this line in the editor",
+                onclick: () => editor.goTo(err.line),
+              }, `line ${err.line}`)
+            : null),
       el("p", { class: "error-message" }, err.message),
       hints[err.stage] ? el("p", { class: "error-hint" }, hints[err.stage]) : null);
   }
@@ -606,6 +654,7 @@
     const trace = r.trace || [];
     if (!trace.length) return;
     const i = clamp(index, 0, trace.length - 1);
+    if (i < state.step) emit("step-back", i);
     state.step = i;
     const s = trace[i];
     const prev = i > 0 ? trace[i - 1] : null;
@@ -744,6 +793,7 @@
 
   editor.onChange(() => {
     if (loading) return;
+    emit("change");
     if (!state.dirty) {
       state.dirty = true;
       $("#dirty-dot").hidden = false;
@@ -830,6 +880,32 @@
     const saved = Number(localStorage.getItem("minilang.split"));
     if (saved) setSplit(saved);
   } catch { /* storage unavailable */ }
+
+  // ------------------------------------------------ bridge for game.js
+
+  /** Put new code in the editor (a level, or the playground again) and clear old results. */
+  function loadSource(text, title) {
+    loading = true;
+    editor.setValue(text);
+    loading = false;
+    state.dirty = false;
+    $("#dirty-dot").hidden = true;
+    if (title) $("#file-name").textContent = title;
+    clearResults();
+  }
+
+  window.MiniLang = {
+    on(type, fn) { (listeners[type] = listeners[type] || []).push(fn); },
+    dom: { $, $$, el },
+    getSource: () => editor.getValue(),
+    getTitle: () => $("#file-name").textContent,
+    loadSource,
+    setRunContext(ctx) { state.runContext = ctx; },
+    run,
+    selectTab,
+    goToLine: (line) => editor.goTo(line),
+    refreshEditor: () => editor.refresh(),
+  };
 
   selectTab("output");
 })();

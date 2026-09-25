@@ -26,12 +26,28 @@
       </div>
     </div>
     <div class="actions">
-      <label class="field-label" for="example-select">Example</label>
-      <select id="example-select" class="select">
-        {% for ex in examples %}
-        <option value="{{ ex.name }}">{{ ex.name }}</option>
-        {% endfor %}
-      </select>
+      <button type="button" class="btn-secondary" id="levels-btn" aria-haspopup="dialog">
+        <svg class="icon-star" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M8 1.6l1.9 4 4.3.5-3.2 2.9.9 4.3L8 11.1l-3.9 2.2.9-4.3L1.8 6.1l4.3-.5z" fill="currentColor"/></svg>
+        <span>Levels</span>
+        <span class="btn-count" id="levels-count">0/0</span>
+      </button>
+      <button type="button" class="xp-pill" id="xp-btn" aria-haspopup="dialog" aria-label="Profile and achievements">
+        <span class="xp-level" id="xp-level">Lv 1</span>
+        <span class="xp-bar" aria-hidden="true"><span class="xp-fill" id="xp-fill"></span></span>
+        <span class="xp-text" id="xp-text">0 XP</span>
+      </button>
+      <span class="example-picker" id="example-picker">
+        <label class="field-label" for="example-select">Example</label>
+        <select id="example-select" class="select">
+          {% for ex in examples %}
+          <option value="{{ ex.name }}">{{ ex.name }}</option>
+          {% endfor %}
+        </select>
+      </span>
+      <button id="check" class="btn-check" type="button" aria-keyshortcuts="Control+Shift+Enter Meta+Shift+Enter" hidden>
+        <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M3 8.5l3.2 3.2L13 5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <span class="btn-check-label">Check</span>
+      </button>
       <button id="run" class="btn-run" type="button" aria-keyshortcuts="Control+Enter Meta+Enter">
         <span class="btn-run-icon" aria-hidden="true">
           <svg viewBox="0 0 16 16" width="14" height="14"><path d="M4.5 2.8v10.4a.6.6 0 0 0 .9.5l8.3-5.2a.6.6 0 0 0 0-1L5.4 2.3a.6.6 0 0 0-.9.5Z" fill="currentColor"/></svg>
@@ -47,7 +63,13 @@
     <section class="pane editor-pane" aria-labelledby="editor-title">
       <div class="pane-head">
         <h2 class="pane-title" id="editor-title"><span id="file-name">demo.ml</span><span class="dirty-dot" id="dirty-dot" title="Edited" hidden></span></h2>
-        <span class="pane-meta" id="cursor-pos">Ln 1, Col 1</span>
+        <div class="pane-head-end">
+          <div class="level-actions" id="level-actions" hidden>
+            <button type="button" class="btn-quiet" id="level-reset">Reset code</button>
+            <button type="button" class="btn-quiet" id="level-exit">Exit level</button>
+          </div>
+          <span class="pane-meta" id="cursor-pos">Ln 1, Col 1</span>
+        </div>
       </div>
       <div class="editor-wrap">
         <textarea id="source" spellcheck="false" autocapitalize="off" autocomplete="off" aria-label="MiniLang source code">{{ sample }}</textarea>
@@ -60,6 +82,9 @@
     <section class="pane result-pane" aria-label="Compiler stages">
       <div class="tabs-row">
         <div class="tabs" role="tablist" aria-label="Compiler stages">
+          <button class="tab" role="tab" id="tab-level" aria-controls="panel-level" aria-selected="false" tabindex="-1" type="button" hidden>
+            Level <span class="badge badge-stars" id="badge-level" hidden></span>
+          </button>
           <button class="tab" role="tab" id="tab-tokens" aria-controls="panel-tokens" aria-selected="false" tabindex="-1" type="button">
             Tokens <span class="badge" id="badge-tokens" hidden></span>
           </button>
@@ -74,6 +99,11 @@
           </button>
         </div>
         <span class="stale-note" id="stale-note" hidden>Edited since last run</span>
+      </div>
+
+      <!-- Level (game mode only; filled by game.js) -->
+      <div class="panel" role="tabpanel" id="panel-level" aria-labelledby="tab-level" tabindex="0" hidden>
+        <div class="panel-scroll level-scroll" id="level-body"></div>
       </div>
 
       <!-- Tokens -->
@@ -134,6 +164,7 @@
           <div id="output-result" hidden>
             <section class="out-section" aria-labelledby="console-title">
               <h3 class="section-label" id="console-title">Program output <span class="section-count" id="console-count"></span></h3>
+              <p class="harness-note" id="harness-note" hidden></p>
               <pre class="console" id="console"></pre>
               <div id="error-slot"></div>
             </section>
@@ -191,11 +222,49 @@
   </footer>
 </div>
 
+<!-- Level picker -->
+<dialog class="dialog dialog-wide" id="levels-dialog" aria-labelledby="levels-title">
+  <div class="dialog-head">
+    <div>
+      <h2 class="dialog-title" id="levels-title">Levels</h2>
+      <p class="dialog-sub" id="levels-sub"></p>
+    </div>
+    <button type="button" class="icon-btn" data-close aria-label="Close">
+      <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+    </button>
+  </div>
+  <div class="dialog-body" id="levels-list"></div>
+  <div class="dialog-foot">
+    <button type="button" class="btn-quiet" id="levels-playground">Back to the free playground</button>
+  </div>
+</dialog>
+
+<!-- Profile and achievements -->
+<dialog class="dialog" id="profile-dialog" aria-labelledby="profile-title">
+  <div class="dialog-head">
+    <div>
+      <h2 class="dialog-title" id="profile-title">Your progress</h2>
+      <p class="dialog-sub">Saved in this browser.</p>
+    </div>
+    <button type="button" class="icon-btn" data-close aria-label="Close">
+      <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+    </button>
+  </div>
+  <div class="dialog-body" id="profile-body"></div>
+  <div class="dialog-foot">
+    <button type="button" class="btn-danger-quiet" id="progress-reset">Reset all progress</button>
+  </div>
+</dialog>
+
+<div class="toasts" id="toasts" aria-live="polite" aria-atomic="false"></div>
+
 <script type="application/json" id="examples-data">{{ examples | tojson }}</script>
+<script type="application/json" id="levels-data">{{ levels | tojson }}</script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/mode/simple.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/edit/matchbrackets.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/selection/active-line.min.js"></script>
 <script src="{{ url_for('static', filename='app.js') }}"></script>
+<script src="{{ url_for('static', filename='game.js') }}"></script>
 </body>
 </html>

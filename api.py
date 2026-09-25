@@ -41,11 +41,15 @@ def error_to_dict(err):
 
 def run_pipeline(source, optimize=True, trace=False, max_steps=MAX_STEPS,
                  max_output_lines=MAX_OUTPUT_LINES, max_trace_steps=MAX_TRACE_STEPS,
-                 max_call_depth=MAX_CALL_DEPTH):
+                 max_call_depth=MAX_CALL_DEPTH, inputs=None):
     """Run source through every stage and return a dict describing each one.
 
+    inputs: optional {name: int} of global variables that exist before the
+    program starts (how game levels pass test data in, since MiniLang has no
+    input statement).
+
     Keys: ok, tokens, ast, ast_dump, bytecode, bytecode_unoptimized, optimizer,
-    output, trace, trace_truncated, error. A stage that never ran is None.
+    output, steps, trace, trace_truncated, error. A stage that never ran is None.
     """
     result = {
         "ok": False,
@@ -56,6 +60,7 @@ def run_pipeline(source, optimize=True, trace=False, max_steps=MAX_STEPS,
         "bytecode_unoptimized": None,
         "optimizer": {"enabled": optimize, "before": None, "after": None},
         "output": [],
+        "steps": 0,
         "trace": [] if trace else None,
         "trace_truncated": False,
         "error": None,
@@ -80,9 +85,17 @@ def run_pipeline(source, optimize=True, trace=False, max_steps=MAX_STEPS,
         result["bytecode"] = bytecode_to_list(code)
         result["optimizer"].update(before=len(plain), after=len(code))
 
-        on_step = _trace_recorder(result, max_trace_steps) if trace else None
-        VM(code, out=out, max_steps=max_steps, max_output_lines=max_output_lines,
-           max_call_depth=max_call_depth, on_step=on_step).run()
+        record = _trace_recorder(result, max_trace_steps) if trace else None
+
+        def on_step(addr, ins, vm):
+            result["steps"] += 1  # counted here so vm.py stays untouched
+            if record is not None:
+                record(addr, ins, vm)
+
+        vm = VM(code, out=out, max_steps=max_steps, max_output_lines=max_output_lines,
+                max_call_depth=max_call_depth, on_step=on_step)
+        vm.variables.update(inputs or {})
+        vm.run()
         result["ok"] = True
     except MiniLangError as e:
         result["error"] = error_to_dict(e)

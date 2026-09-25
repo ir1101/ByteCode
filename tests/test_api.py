@@ -106,6 +106,16 @@ class RunPipelineTests(unittest.TestCase):
         r = run_pipeline("#" * (MAX_SOURCE_CHARS + 1))
         self.assertEqual(r["error"]["stage"], "input")
 
+    def test_inputs_are_globals_before_the_program_starts(self):
+        r = run_pipeline("print n * 2;", inputs={"n": 21})
+        self.assertEqual(r["output"], ["42"])
+
+    def test_steps_are_counted_with_and_without_trace(self):
+        plain = run_pipeline("x = 1;\nprint x;", optimize=False)
+        traced = run_pipeline("x = 1;\nprint x;", optimize=False, trace=True)
+        self.assertEqual(plain["steps"], 5)                  # PUSH STORE LOAD PRINT HALT
+        self.assertEqual(traced["steps"], len(traced["trace"]))
+
     def test_readable_ast_dump(self):
         r = run_pipeline("x = 1;")
         self.assertTrue(r["ast_dump"].startswith("Program  [line 1]"))

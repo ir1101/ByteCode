@@ -1,8 +1,11 @@
 """MiniLang web frontend: a thin Flask layer over the compiler.
 
-    GET  /      the playground page (templates/index.html + static/)
-    POST /run   body {"source": "..."}  ->  JSON with tokens, AST, bytecode,
-                output and, if a stage failed, the error with its line number
+    GET  /       the playground page (templates/index.html + static/)
+    POST /run    body {"source": "...", "level"?: "c1"}  ->  JSON with tokens, AST,
+                 bytecode, output and, if a stage failed, the error with its line
+                 number. With "level", the code runs on that level's example test.
+    POST /check  body {"level": "c1", "source": "..."}  ->  every test of the level,
+                 the score, and the stars earned (see levels.py)
 
 Run:  python app.py        then open http://127.0.0.1:5000
 """
@@ -13,6 +16,7 @@ from flask import Flask, jsonify, render_template, request
 from werkzeug.exceptions import HTTPException
 
 from api import run_pipeline
+from levels import LEVELS_BY_ID, check_level, public_levels, run_example
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 EXAMPLES_DIR = os.path.join(ROOT, "examples")
@@ -32,22 +36,46 @@ def load_examples():
     return examples
 
 
+def bad_request(example):
+    return jsonify(error=f"expected a JSON object like {example}"), 400
+
+
 @app.get("/")
 def index():
     examples = load_examples()
-    return render_template("index.html", examples=examples, sample=examples[0]["source"])
+    return render_template("index.html", examples=examples, sample=examples[0]["source"],
+                           levels=public_levels())
 
 
 @app.post("/run")
 def run():
     body = request.get_json(silent=True)
     if not isinstance(body, dict) or not isinstance(body.get("source"), str):
-        return jsonify(error='expected a JSON object like {"source": "print 1;"}'), 400
+        return bad_request('{"source": "print 1;"}')
+
+    level_id = body.get("level")
+    if level_id is not None:
+        level = LEVELS_BY_ID.get(level_id) if isinstance(level_id, str) else None
+        if level is None:
+            return jsonify(error=f"unknown level {level_id!r}"), 404
+        return jsonify(run_example(level, body["source"]))
 
     # lexer -> parser -> compiler (+ optimizer) -> VM. Any MiniLang error is caught
     # inside run_pipeline and returned as result["error"] = {stage, message, line}.
     result = run_pipeline(body["source"], optimize=True, trace=True)
     return jsonify(result)
+
+
+@app.post("/check")
+def check():
+    body = request.get_json(silent=True)
+    if (not isinstance(body, dict) or not isinstance(body.get("source"), str)
+            or not isinstance(body.get("level"), str)):
+        return bad_request('{"level": "c1", "source": "print 1;"}')
+    level = LEVELS_BY_ID.get(body["level"])
+    if level is None:
+        return jsonify(error=f"unknown level {body['level']!r}"), 404
+    return jsonify(check_level(level, body["source"]))
 
 
 @app.errorhandler(413)

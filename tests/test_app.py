@@ -69,6 +69,46 @@ class AppTests(unittest.TestCase):
         self.assertEqual(self.client.get("/run").status_code, 405)
         self.assertIn("error", self.client.get("/nope").get_json())
 
+    def test_page_embeds_levels_without_solutions(self):
+        html = self.client.get("/").get_data(as_text=True)
+        self.assertIn('id="levels-data"', html)
+        self.assertIn("Count to n", html)
+        self.assertIn("game.js", html)
+        self.assertNotIn("references", html)
+
+    def test_run_with_level_uses_example_inputs(self):
+        r = self.client.post("/run", json={"level": "c1", "source": "print n;"}).get_json()
+        self.assertEqual(r["output"], ["5"])
+        self.assertEqual(r["harness"]["inputs"], {"n": 5})
+        self.assertEqual(r["trace"][0]["variables"], {"n": 5})  # the input is visible in the stepper
+
+    def test_run_with_function_level_appends_test_code(self):
+        r = self.client.post("/run", json={"level": "c6", "source": "func fact(n) { return n; }"}).get_json()
+        self.assertEqual(r["output"], ["5"])
+        self.assertEqual(r["harness"]["epilogue"], "print fact(5);")
+
+    def test_run_with_unknown_level(self):
+        self.assertEqual(self.client.post("/run", json={"level": "zz", "source": ""}).status_code, 404)
+
+    def test_check_scores_a_solution(self):
+        r = self.client.post("/check", json={"level": "c2", "source": "print n * (n + 1) / 2;"}).get_json()
+        self.assertTrue(r["passed"])
+        self.assertEqual(r["stars"], [True, True, True])
+        self.assertTrue(all(t["passed"] for t in r["tests"]))
+
+    def test_check_reports_failures(self):
+        r = self.client.post("/check", json={"level": "c2", "source": "print 55;"}).get_json()
+        self.assertFalse(r["passed"])
+        failing = [t for t in r["tests"] if not t["passed"]]
+        self.assertTrue(failing)
+        self.assertEqual(failing[0]["output"], ["55"])
+
+    def test_check_bad_requests(self):
+        self.assertEqual(self.client.post("/check", json={"level": "nope", "source": ""}).status_code, 404)
+        self.assertEqual(self.client.post("/check", json={"source": "print 1;"}).status_code, 400)
+        self.assertEqual(self.client.post("/check", json={"level": "c1"}).status_code, 400)
+        self.assertEqual(self.client.post("/check", data="x", content_type="application/json").status_code, 400)
+
     def test_oversized_body_rejected(self):
         resp = self.client.post("/run", data="x" * 1_100_000, content_type="application/json")
         self.assertEqual(resp.status_code, 413)

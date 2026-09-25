@@ -38,6 +38,7 @@ Hovering a row in any tab highlights its source line. Errors appear in a red box
 | `app.py` | `GET /` serves the page; `POST /run` with `{"source": "..."}` returns the JSON described below |
 | `templates/index.html` | the single page |
 | `static/style.css`, `static/app.js` | dark theme and rendering; the browser never compiles anything itself |
+| `static/game.js` | levels, stars, XP, achievements and toasts (see [Game mode](#game-mode)) |
 
 `/run` always answers **HTTP 200** when the request itself is valid. A MiniLang error is reported inside the result as `ok: false`. A malformed request gets HTTP 400 (or 413 if it's over 1 MB) with `{"error": "..."}`.
 
@@ -54,6 +55,7 @@ Hovering a row in any tab highlights its source line. Errors appear in a red box
   "bytecode_unoptimized": [...],
   "optimizer": {"enabled": true, "before": 7, "after": 5},
   "output":   ["5"],                                                  // kept even if a runtime error happens
+  "steps":    5,                                                      // VM instructions executed (never capped)
   "trace":    [{"addr": 0, "op": "PUSH", "arg": 5, "line": 1,
                 "stack": [5], "variables": {},                        // variables = globals
                 "locals": null, "call_stack": [],                     // current call's locals, names of active calls
@@ -77,7 +79,37 @@ Stages that finished before an error still return their data, and stages that ne
 | Printed lines | 10,000 | runtime error |
 | Trace steps recorded | 5,000 | the program keeps running; `trace_truncated` is set to `true` |
 | Nesting depth | Python's recursion limit | `parse` or `compile` error: "nested too deeply" |
-```
+
+## Game mode
+
+The playground is also a game. Open **Levels** in the top bar.
+
+- **Challenges (C1–C10):** write a program that passes hidden tests. The levels range from "Count to n" up to recursion, fast exponentiation and primes.
+- **Bug hunts (B1–B7):** fix a broken program. They go in pipeline order: lexer error, parse error, compile error, two runtime errors, then two logic bugs. The last one, "Scope trap", is about MiniLang's scoping rule.
+
+Levels unlock one at a time within each track. Progress, XP and badges are saved in your browser's `localStorage`. The XP pill in the top bar opens your rank, stats and achievements, and has a reset button.
+
+**How a level is tested.** MiniLang has no input statement, so each test does two things:
+- **Sets global variables** before your first line runs, e.g. `n = 7`. They're put straight into the VM, so your line numbers never shift.
+- **May append test code** after your last line, e.g. `print fact(5);`.
+
+Every level has several tests with different inputs, so hard-coding the answer fails. **Run** tries the example test with the full trace; **Check** runs every test on the server.
+
+**Stars** (computed on the server in `levels.py`):
+
+| | ★ | ★★ | ★★★ |
+|---|---|---|---|
+| Challenge | every test passes | optimized bytecode ≤ par size | total VM steps ≤ par |
+| Bug hunt | every test passes | changed lines ≤ par (the minimal fix) | total VM steps ≤ par |
+
+Par values and expected outputs come from reference solutions that run when the server starts, and a test checks that every reference earns 3 stars. Some levels use par to teach a lesson. On C2 a loop earns ★, but Gauss's formula earns ★★★. On C7 recursive `fib` is correct and compact (★★), but only the iterative version is fast enough for ★★★.
+
+**XP:** 50 per star, plus 25–200 per achievement. There are 8 ranks, from *Token Tinkerer* to *Compiler Wizard*.
+
+| Endpoint | Body | Returns |
+|---|---|---|
+| `POST /run` with `"level"` | `{"level": "c1", "source": "..."}` | the normal `/run` result for the level's example test, plus `harness: {inputs, epilogue, label}` |
+| `POST /check` | `{"level": "c1", "source": "..."}` | each test (pass/fail, expected vs actual output, error), `metrics`, `par`, `stars`, `criteria` |
 
 ## The language
 
@@ -204,7 +236,8 @@ Before folding, the optimizer compiles the original tree once, just to run the c
 | `errors.py` | `LexError`, `ParseError`, `CompileError`, `VMError`; each carries a line number |
 | `main.py` | command-line driver (`--debug`, `--trace`, `--no-opt`) |
 | `api.py` | runs the whole pipeline and returns JSON-ready data |
-| `app.py` | Flask web playground: serves the page and the `/run` endpoint |
-| `templates/`, `static/` | the playground's page, stylesheet and script |
-| `tests/` | unit tests for every stage, the optimizer, the API and the Flask app |
+| `app.py` | Flask web playground: serves the page, `/run` and `/check` |
+| `levels.py` | game levels, the test harness and star scoring |
+| `templates/`, `static/` | the playground's page, stylesheet and scripts (`app.js` for the pipeline view, `game.js` for the game) |
+| `tests/` | unit tests for every stage, the optimizer, the API, the levels and the Flask app |
 | `examples/` | `demo.ml`, `optimize.ml`, `functions.ml` (recursion, for, break/continue) |
