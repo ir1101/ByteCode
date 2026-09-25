@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MiniLang Playground</title>
+  <meta name="description" content="Write MiniLang, then watch it go through the lexer, parser, compiler and stack VM.">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23232833'/%3E%3Cpath d='M11 9.5v13l11-6.5z' fill='%234fd1a5'/%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+<div class="app">
+
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true">ML</span>
+      <div class="brand-text">
+        <h1>MiniLang</h1>
+        <p class="pipeline" aria-label="Pipeline: lexer, parser, compiler, VM">
+          <span>lexer</span><span aria-hidden="true">→</span><span>parser</span><span aria-hidden="true">→</span><span>compiler</span><span aria-hidden="true">→</span><span>VM</span>
+        </p>
+      </div>
+    </div>
+    <div class="actions">
+      <label class="field-label" for="example-select">Example</label>
+      <select id="example-select" class="select">
+        {% for ex in examples %}
+        <option value="{{ ex.name }}">{{ ex.name }}</option>
+        {% endfor %}
+      </select>
+      <button id="run" class="btn-run" type="button" aria-keyshortcuts="Control+Enter Meta+Enter">
+        <span class="btn-run-icon" aria-hidden="true">
+          <svg viewBox="0 0 16 16" width="14" height="14"><path d="M4.5 2.8v10.4a.6.6 0 0 0 .9.5l8.3-5.2a.6.6 0 0 0 0-1L5.4 2.3a.6.6 0 0 0-.9.5Z" fill="currentColor"/></svg>
+        </span>
+        <span class="btn-run-label">Run</span>
+        <kbd class="btn-run-kbd" id="run-kbd">Ctrl ↵</kbd>
+      </button>
+    </div>
+  </header>
+
+  <main class="workspace" id="workspace">
+
+    <section class="pane editor-pane" aria-labelledby="editor-title">
+      <div class="pane-head">
+        <h2 class="pane-title" id="editor-title"><span id="file-name">demo.ml</span><span class="dirty-dot" id="dirty-dot" title="Edited" hidden></span></h2>
+        <span class="pane-meta" id="cursor-pos">Ln 1, Col 1</span>
+      </div>
+      <div class="editor-wrap">
+        <textarea id="source" spellcheck="false" autocapitalize="off" autocomplete="off" aria-label="MiniLang source code">{{ sample }}</textarea>
+      </div>
+    </section>
+
+    <div class="divider" id="divider" role="separator" aria-orientation="vertical"
+         aria-label="Resize editor and results" aria-valuemin="25" aria-valuemax="75" aria-valuenow="50" tabindex="0"></div>
+
+    <section class="pane result-pane" aria-label="Compiler stages">
+      <div class="tabs-row">
+        <div class="tabs" role="tablist" aria-label="Compiler stages">
+          <button class="tab" role="tab" id="tab-tokens" aria-controls="panel-tokens" aria-selected="false" tabindex="-1" type="button">
+            Tokens <span class="badge" id="badge-tokens" hidden></span>
+          </button>
+          <button class="tab" role="tab" id="tab-ast" aria-controls="panel-ast" aria-selected="false" tabindex="-1" type="button">
+            AST <span class="badge" id="badge-ast" hidden></span>
+          </button>
+          <button class="tab" role="tab" id="tab-bytecode" aria-controls="panel-bytecode" aria-selected="false" tabindex="-1" type="button">
+            Bytecode <span class="badge" id="badge-bytecode" hidden></span>
+          </button>
+          <button class="tab" role="tab" id="tab-output" aria-controls="panel-output" aria-selected="true" tabindex="0" type="button">
+            Output <span class="badge" id="badge-output" hidden></span>
+          </button>
+        </div>
+        <span class="stale-note" id="stale-note" hidden>Edited since last run</span>
+      </div>
+
+      <!-- Tokens -->
+      <div class="panel" role="tabpanel" id="panel-tokens" aria-labelledby="tab-tokens" tabindex="0" hidden>
+        <div class="panel-scroll" id="tokens-body">
+          <div class="empty">
+            <p class="empty-title">Tokens will appear here</p>
+            <p class="empty-text">The lexer splits your source into tokens. Each one has a type, a value and a line number.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- AST -->
+      <div class="panel" role="tabpanel" id="panel-ast" aria-labelledby="tab-ast" tabindex="0" hidden>
+        <div class="panel-toolbar" id="ast-toolbar" hidden>
+          <div class="segmented" role="group" aria-label="AST view">
+            <button type="button" class="seg" data-ast-view="tree" aria-pressed="true">Tree</button>
+            <button type="button" class="seg" data-ast-view="text" aria-pressed="false">Text</button>
+          </div>
+          <div class="toolbar-actions" id="ast-tree-actions">
+            <button type="button" class="btn-quiet" id="ast-expand">Expand all</button>
+            <button type="button" class="btn-quiet" id="ast-collapse">Collapse all</button>
+          </div>
+        </div>
+        <div class="panel-scroll" id="ast-body">
+          <div class="empty">
+            <p class="empty-title">The syntax tree will appear here</p>
+            <p class="empty-text">The parser builds a tree of statements and expressions from the tokens. Hover over a node to see its source line.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Bytecode -->
+      <div class="panel" role="tabpanel" id="panel-bytecode" aria-labelledby="tab-bytecode" tabindex="0" hidden>
+        <div class="panel-toolbar" id="bytecode-toolbar" hidden>
+          <div class="segmented" role="group" aria-label="Bytecode version">
+            <button type="button" class="seg" data-bc-view="optimized" aria-pressed="true">Optimized <span class="seg-count" id="bc-count-opt"></span></button>
+            <button type="button" class="seg" data-bc-view="original" aria-pressed="false">Before optimizing <span class="seg-count" id="bc-count-orig"></span></button>
+          </div>
+          <span class="toolbar-note" id="bc-note"></span>
+        </div>
+        <div class="panel-scroll" id="bytecode-body">
+          <div class="empty">
+            <p class="empty-title">Bytecode will appear here</p>
+            <p class="empty-text">The compiler flattens the tree into numbered instructions for the stack machine.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Output -->
+      <div class="panel" role="tabpanel" id="panel-output" aria-labelledby="tab-output" tabindex="0">
+        <div class="panel-scroll" id="output-body">
+          <div class="empty" id="output-empty">
+            <p class="empty-title">Nothing has run yet</p>
+            <p class="empty-text">Press <strong>Run</strong> or <kbd class="kbd" id="empty-kbd">Ctrl ↵</kbd>. You'll see what the program prints, and you can step through it one instruction at a time.</p>
+          </div>
+
+          <div id="output-result" hidden>
+            <section class="out-section" aria-labelledby="console-title">
+              <h3 class="section-label" id="console-title">Program output <span class="section-count" id="console-count"></span></h3>
+              <pre class="console" id="console"></pre>
+              <div id="error-slot"></div>
+            </section>
+
+            <section class="out-section stepper" id="stepper" aria-labelledby="stepper-title" hidden>
+              <div class="stepper-head">
+                <h3 class="section-label" id="stepper-title">Step through execution</h3>
+                <span class="step-count" id="step-count" aria-live="polite"></span>
+              </div>
+
+              <div class="step-controls">
+                <button type="button" class="icon-btn" id="step-first" aria-label="First step">
+                  <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M3.5 3v10M12.5 3.6v8.8a.5.5 0 0 1-.8.4L5.8 8.4a.5.5 0 0 1 0-.8l5.9-4.4a.5.5 0 0 1 .8.4Z" fill="currentColor" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>
+                </button>
+                <button type="button" class="icon-btn" id="step-prev" aria-label="Previous step">
+                  <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M10 3.5 5.5 8l4.5 4.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </button>
+                <input type="range" id="step-range" class="step-range" min="0" max="0" value="0" aria-label="Execution step">
+                <button type="button" class="icon-btn" id="step-next" aria-label="Next step">
+                  <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M6 3.5 10.5 8 6 12.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </button>
+                <button type="button" class="icon-btn" id="step-last" aria-label="Last step">
+                  <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M12.5 3v10M3.5 3.6v8.8a.5.5 0 0 0 .8.4l5.9-4.4a.5.5 0 0 0 0-.8L4.3 3.2a.5.5 0 0 0-.8.4Z" fill="currentColor" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>
+                </button>
+              </div>
+
+              <div class="step-now" id="step-now"></div>
+              <p class="step-note" id="step-truncated" hidden></p>
+
+              <div class="step-grid">
+                <div class="step-col">
+                  <h4 class="col-label">Stack <span class="col-hint">top first</span></h4>
+                  <ol class="stack" id="step-stack"></ol>
+                </div>
+                <div class="step-col">
+                  <h4 class="col-label">Frames</h4>
+                  <div class="frames" id="step-frames"></div>
+                </div>
+              </div>
+
+              <div class="step-col">
+                <h4 class="col-label">Printed so far</h4>
+                <pre class="console console-small" id="step-output"></pre>
+              </div>
+            </section>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="statusbar">
+    <span class="status" id="status" role="status" aria-live="polite">Ready</span>
+    <span class="status-meta" id="status-meta"></span>
+  </footer>
+</div>
+
+<script type="application/json" id="examples-data">{{ examples | tojson }}</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/mode/simple.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/edit/matchbrackets.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/selection/active-line.min.js"></script>
+<script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>
