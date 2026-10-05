@@ -7,10 +7,13 @@
     POST /check  body {"level": "c1", "source": "..."}  ->  every test of the level,
                  the score, and the stars earned (see levels.py)
 
-Run:  python app.py        then open http://127.0.0.1:5000
+Run:  python app.py         this computer only: http://127.0.0.1:5000
+      python app.py --lan   also every device on your Wi-Fi / LAN (the addresses are printed)
 """
 
+import argparse
 import os
+import socket
 
 from flask import Flask, jsonify, render_template, request
 from werkzeug.exceptions import HTTPException
@@ -96,5 +99,43 @@ def unexpected(err):
     return jsonify(error="internal server error (details are in the terminal running app.py)"), 500
 
 
+def lan_addresses():
+    """This machine's IPv4 addresses on the local network, for the startup message."""
+    found = set()
+    try:
+        # Connecting a UDP socket sends nothing; it just makes the OS pick the
+        # interface it would use to reach the network, revealing our LAN address.
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.connect(("10.255.255.255", 1))
+            found.add(s.getsockname()[0])
+    except OSError:
+        pass
+    try:
+        found.update(socket.gethostbyname_ex(socket.gethostname())[2])
+    except OSError:
+        pass
+    return sorted(ip for ip in found if not ip.startswith(("127.", "0.", "169.254.")))
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(description="Serve the MiniLang playground.")
+    ap.add_argument("--lan", action="store_true",
+                    help="let other devices on your local network open the playground")
+    ap.add_argument("--port", type=int, default=5000)
+    args = ap.parse_args(argv)
+
+    host = "0.0.0.0" if args.lan else "127.0.0.1"
+    print(f"MiniLang playground on this computer: http://127.0.0.1:{args.port}")
+    if args.lan:
+        addresses = lan_addresses()
+        if addresses:
+            print("Other devices on the same network can open:")
+            for ip in addresses:
+                print(f"    http://{ip}:{args.port}")
+        else:
+            print("No network connection found, so only this computer can reach it.")
+    app.run(host=host, port=args.port, debug=False, threaded=True)
+
+
 if __name__ == "__main__":
-    app.run(host="127.0.0.1", port=5000, debug=False)
+    main()

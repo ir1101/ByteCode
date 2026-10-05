@@ -100,7 +100,7 @@ class TestCodeErrorTests(unittest.TestCase):
 
     def test_inputs_do_not_shift_line_numbers(self):
         err = run_example(LEVELS_BY_ID["c1"], "x = 1;\nprint y;")["error"]
-        self.assertEqual((err["stage"], err["line"]), ("runtime", 2))
+        self.assertEqual((err["stage"], err["line"]), ("semantic", 2))  # undefined y, caught before running
 
 
 class ChangedLinesTests(unittest.TestCase):

@@ -6,6 +6,12 @@
       "runtimeExecutable": "python",
       "runtimeArgs": ["app.py"],
       "port": 5000
+    },
+    {
+      "name": "minilang-lan",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["app.py", "--lan"],
+      "port": 5000
     }
   ]
 }

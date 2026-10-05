@@ -35,11 +35,24 @@ class AppTests(unittest.TestCase):
         self.assertEqual(r["output"], ["42"])
         self.assertTrue(r["trace"])                        # the page's step-through view
 
+    def test_run_includes_symbols_warnings_and_ir(self):
+        r = self.client.post("/run", json={"source": "x = 1;\nunused = 2;\nprint x;"}).get_json()
+        self.assertEqual([g["name"] for g in r["symbols"]["globals"]], ["x", "unused"])
+        self.assertEqual([(w["line"], w["code"]) for w in r["warnings"]], [(2, "unused")])
+        self.assertGreaterEqual(r["ir"]["stats"]["blocks"], 1)
+        self.assertIn("print 1", r["ir"]["procedures"][0]["blocks"][0]["optimized"])
+
+    def test_page_has_symbols_and_ir_tabs(self):
+        html = self.client.get("/").get_data(as_text=True)
+        self.assertIn('id="tab-symbols"', html)
+        self.assertIn('id="tab-ir"', html)
+        self.assertIn('<option value="arrays.ml">', html)
+
     def test_each_stage_error_is_returned_with_its_line(self):
         cases = [
             ("x = 1;\ny = 2 @ 3;", "lex", 2),
             ("x = 1\nprint x;", "parse", 1),
-            ("print nope();", "compile", 1),
+            ("print nope();", "semantic", 1),
             ("print 1;\nprint 1 / 0;", "runtime", 2),
         ]
         for source, stage, line in cases:
@@ -108,6 +121,13 @@ class AppTests(unittest.TestCase):
         self.assertEqual(self.client.post("/check", json={"source": "print 1;"}).status_code, 400)
         self.assertEqual(self.client.post("/check", json={"level": "c1"}).status_code, 400)
         self.assertEqual(self.client.post("/check", data="x", content_type="application/json").status_code, 400)
+
+    def test_lan_addresses_are_real_network_addresses(self):
+        from app import lan_addresses
+        for ip in lan_addresses():
+            parts = ip.split(".")
+            self.assertEqual(len(parts), 4, ip)
+            self.assertFalse(ip.startswith(("127.", "0.", "169.254.")), ip)
 
     def test_oversized_body_rejected(self):
         resp = self.client.post("/run", data="x" * 1_100_000, content_type="application/json")

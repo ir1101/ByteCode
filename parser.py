@@ -8,7 +8,7 @@ Grammar (lowest to highest precedence for expressions):
     statement   := assign | print | if | while | for | block
                  | call ";" | "return" expr? ";" | "break" ";" | "continue" ";"
     assign      := assignment ";"
-    assignment  := IDENT "=" expr
+    assignment  := IDENT ("[" expr "]")* "=" expr        (a = 1;  a[i] = 1;  a[i][j] = 1;)
     print       := "print" expr ";"
     if          := "if" expr block ("else" (if | block))?
     while       := "while" expr block
@@ -21,15 +21,16 @@ Grammar (lowest to highest precedence for expressions):
     not_expr    := "not" not_expr | comparison
     comparison  := additive (("=="|"!="|"<"|">"|"<="|">=") additive)?
     additive    := term (("+"|"-") term)*
-    term        := unary (("*"|"/") unary)*
-    unary       := "-" unary | primary
-    primary     := INT | call | IDENT | "(" expr ")"
-    call        := IDENT "(" (expr ("," expr)*)? ")"
+    term        := unary (("*"|"/"|"%") unary)*
+    unary       := "-" unary | postfix
+    postfix     := primary ("[" expr "]")*
+    primary     := INT | call | IDENT | "(" expr ")" | "[" (expr ("," expr)*)? "]"
+    call        := IDENT "(" (expr ("," expr)*)? ")"      (len and append are built in)
 """
 
-from ast_nodes import (Assign, BinOp, Block, Break, Call, Continue, ExprStmt,
-                       For, FuncDef, If, LogicalOp, Number, Print, Program,
-                       Return, UnaryOp, Var, While)
+from ast_nodes import (ArrayLit, Assign, BinOp, Block, Break, Call, Continue,
+                       ExprStmt, For, FuncDef, If, Index, IndexAssign, LogicalOp,
+                       Number, Print, Program, Return, UnaryOp, Var, While)
 from errors import ParseError
 from lexer import EOF, IDENT, INT, KEYWORD, OP
 
@@ -130,8 +131,19 @@ class Parser:
 
     def assignment(self):
         name = self.expect(IDENT, what="variable name")
-        self.expect(OP, "=", "'=' after variable name")
-        return Assign(name.value, self.expr(), line=name.line)
+        indexes = []
+        while self.match(OP, "["):
+            indexes.append(self.expr())
+            self.expect(OP, "]", "']'")
+        self.expect(OP, "=", "'=' after variable name" if not indexes else "'=' after ']'")
+        value = self.expr()
+        if not indexes:
+            return Assign(name.value, value, line=name.line)
+        # a[i][j] = v  stores into the list a[i] at position j.
+        target = Var(name.value, line=name.line)
+        for index in indexes[:-1]:
+            target = Index(target, index, line=name.line)
+        return IndexAssign(target, indexes[-1], value, line=name.line)
 
     def assign_stmt(self):
         node = self.assignment()
@@ -234,7 +246,7 @@ class Parser:
 
     def term(self):
         left = self.unary()
-        while self.check(OP, "*") or self.check(OP, "/"):
+        while self.check(OP, "*") or self.check(OP, "/") or self.check(OP, "%"):
             tok = self.match(OP)
             left = BinOp(tok.value, left, self.unary(), line=tok.line)
         return left
@@ -242,7 +254,15 @@ class Parser:
     def unary(self):
         if (tok := self.match(OP, "-")):
             return UnaryOp("-", self.unary(), line=tok.line)
-        return self.primary()
+        return self.postfix()
+
+    def postfix(self):
+        node = self.primary()
+        while (tok := self.match(OP, "[")):
+            index = self.expr()
+            self.expect(OP, "]", "']'")
+            node = Index(node, index, line=tok.line)
+        return node
 
     def primary(self):
         if (tok := self.match(INT)):
@@ -255,6 +275,14 @@ class Parser:
             inner = self.expr()
             self.expect(OP, ")", "')'")
             return inner
+        if (tok := self.match(OP, "[")):
+            items = []
+            if not self.check(OP, "]"):
+                items.append(self.expr())
+                while self.match(OP, ","):
+                    items.append(self.expr())
+            self.expect(OP, "]", "']' to close the list")
+            return ArrayLit(items, line=tok.line)
         tok = self.current()
         raise ParseError(f"expected an expression, found {describe(tok)}", tok.line)
 

@@ -20,8 +20,8 @@
       <span class="brand-mark" aria-hidden="true">ML</span>
       <div class="brand-text">
         <h1>MiniLang</h1>
-        <p class="pipeline" aria-label="Pipeline: lexer, parser, compiler, VM">
-          <span>lexer</span><span aria-hidden="true">→</span><span>parser</span><span aria-hidden="true">→</span><span>compiler</span><span aria-hidden="true">→</span><span>VM</span>
+        <p class="pipeline" aria-label="Pipeline: lexer, parser, semantic analysis, IR, compiler, VM">
+          <span>lexer</span><span aria-hidden="true">→</span><span>parser</span><span aria-hidden="true">→</span><span>semantic</span><span aria-hidden="true">→</span><span>IR</span><span aria-hidden="true">→</span><span>compiler</span><span aria-hidden="true">→</span><span>VM</span>
         </p>
       </div>
     </div>
@@ -91,6 +91,12 @@
           <button class="tab" role="tab" id="tab-ast" aria-controls="panel-ast" aria-selected="false" tabindex="-1" type="button">
             AST <span class="badge" id="badge-ast" hidden></span>
           </button>
+          <button class="tab" role="tab" id="tab-symbols" aria-controls="panel-symbols" aria-selected="false" tabindex="-1" type="button">
+            Symbols <span class="badge" id="badge-symbols" hidden></span>
+          </button>
+          <button class="tab" role="tab" id="tab-ir" aria-controls="panel-ir" aria-selected="false" tabindex="-1" type="button">
+            IR <span class="badge" id="badge-ir" hidden></span>
+          </button>
           <button class="tab" role="tab" id="tab-bytecode" aria-controls="panel-bytecode" aria-selected="false" tabindex="-1" type="button">
             Bytecode <span class="badge" id="badge-bytecode" hidden></span>
           </button>
@@ -136,6 +142,33 @@
         </div>
       </div>
 
+      <!-- Symbols (semantic analysis) -->
+      <div class="panel" role="tabpanel" id="panel-symbols" aria-labelledby="tab-symbols" tabindex="0" hidden>
+        <div class="panel-scroll sans-scroll" id="symbols-body">
+          <div class="empty">
+            <p class="empty-title">The symbol table will appear here</p>
+            <p class="empty-text">Semantic analysis records every variable and function, checks scopes before anything runs, and warns about likely mistakes.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- IR: three-address code and control-flow graph -->
+      <div class="panel" role="tabpanel" id="panel-ir" aria-labelledby="tab-ir" tabindex="0" hidden>
+        <div class="panel-toolbar" id="ir-toolbar" hidden>
+          <div class="segmented" role="group" aria-label="IR version">
+            <button type="button" class="seg" data-ir-view="tac" aria-pressed="true">Three-address code</button>
+            <button type="button" class="seg" data-ir-view="optimized" aria-pressed="false">After constant propagation</button>
+          </div>
+          <span class="toolbar-note" id="ir-note"></span>
+        </div>
+        <div class="panel-scroll" id="ir-body">
+          <div class="empty">
+            <p class="empty-title">The intermediate representation will appear here</p>
+            <p class="empty-text">The program as three-address code, split into basic blocks and joined into a control-flow graph, with the constants that data-flow analysis proves.</p>
+          </div>
+        </div>
+      </div>
+
       <!-- Bytecode -->
       <div class="panel" role="tabpanel" id="panel-bytecode" aria-labelledby="tab-bytecode" tabindex="0" hidden>
         <div class="panel-toolbar" id="bytecode-toolbar" hidden>
@@ -167,6 +200,7 @@
               <p class="harness-note" id="harness-note" hidden></p>
               <pre class="console" id="console"></pre>
               <div id="error-slot"></div>
+              <div id="warning-slot"></div>
             </section>
 
             <section class="out-section stepper" id="stepper" aria-labelledby="stepper-title" hidden>

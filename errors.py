@@ -21,6 +21,10 @@ class ParseError(MiniLangError):
     stage = "ParseError"
 
 
+class SemanticError(MiniLangError):
+    stage = "SemanticError"
+
+
 class CompileError(MiniLangError):
     stage = "CompileError"
 

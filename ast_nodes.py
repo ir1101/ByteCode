@@ -68,6 +68,10 @@ class ExprStmt(Node):
     fields = ("expr",)  # a call used as a statement; its result is discarded
 
 
+class IndexAssign(Node):
+    fields = ("target", "index", "value")  # target[index] = value
+
+
 # ----- Expressions -----
 class Number(Node):
     fields = ("value",)
@@ -77,8 +81,16 @@ class Var(Node):
     fields = ("name",)
 
 
+class ArrayLit(Node):
+    fields = ("items",)  # [a, b, c]
+
+
+class Index(Node):
+    fields = ("target", "index")  # target[index]
+
+
 class BinOp(Node):
-    fields = ("op", "left", "right")  # + - * / == != < > <= >=
+    fields = ("op", "left", "right")  # + - * / % == != < > <= >=
 
 
 class LogicalOp(Node):

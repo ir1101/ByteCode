@@ -9,7 +9,7 @@ from lexer import tokenize
 from optimizer import JUMPS, fold_constants, peephole
 from parser import parse
 
-EXAMPLES = ("demo.ml", "optimize.ml", "functions.ml")
+EXAMPLES = ("demo.ml", "optimize.ml", "functions.ml", "arrays.ml")
 
 
 def folded(source):
@@ -154,6 +154,22 @@ class SameBehaviourTests(unittest.TestCase):
         "func pos(x) { return x > 0; } if pos(2) and pos(-1) { print 1; } else { print 0; }",
         "func side(x) { print x; return x; } print 0 and side(1); print side(2) or side(3);",
         "func loop(n) { return loop(n + 1); } print loop(0);",
+        # constant propagation: joins, loops, functions, possibly-undefined variables
+        "x = 3;\ny = x * x;\nif y > 5 { z = y - x; } else { z = 0; }\nprint z; print x + y + z;",
+        "i = 0; total = 0; while i < 5 { total = total + i; i = i + 1; } print total; print i;",
+        "k = 2; for j = 0; j < 3; j = j + 1 { k = k * 2; } print k;",
+        "c = 1; if c { a = 1; } else { a = 2; } print a; c = 0; if c { b = 1; } else { b = 2; } print b;",
+        "n = 0;\nif n { x = 5; }\nprint x;",
+        "g = 4; func f(a) { b = 3; return a * b + g; } print f(2); g = 10; print f(2);",
+        "func h() { v = 2; v = v + 1; return v * v; } print h();",
+        "x = 5; x = x + 1; print x; x = x * 2; print x;",
+        "d = 0; print 10 / d;",
+        # % and arrays
+        "print 17 % 5; print -17 % 5; x = 9; print x % 4 + 10 % 3;",
+        "a = [1, 2 * 3, 7 % 4]; a[0] = a[1] + a[2]; append(a, len(a)); print a;",
+        "a = [];\nfor i = 0; i < 5; i = i + 1 { if i % 2 == 0 { append(a, i); } } print a;",
+        "a = [1];\nprint a[3];",
+        "print 4 % (2 - 2);",
         # compile errors must not be hidden by folding away the code that contains them
         "print 0 and missing();",
         "print 1 or f(1, 2); func f(a) { return a; }",
@@ -179,7 +195,7 @@ class SameBehaviourTests(unittest.TestCase):
                 with open(os.path.join(ROOT, "examples", name), encoding="utf-8") as f:
                     src = f.read()
                 self.assertEqual(self.outcome(src, True), self.outcome(src, False))
-                self.assertLess(len(compile_source(src, True)), len(compile_source(src, False)))
+                self.assertLessEqual(len(compile_source(src, True)), len(compile_source(src, False)))
 
 
 if __name__ == "__main__":

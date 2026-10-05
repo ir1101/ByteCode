@@ -78,7 +78,7 @@ class RunPipelineTests(unittest.TestCase):
 
     def test_compile_error_keeps_ast(self):
         r = run_pipeline("print f();")
-        self.assertEqual(r["error"], {"stage": "compile", "message": "undefined function 'f'", "line": 1})
+        self.assertEqual(r["error"], {"stage": "semantic", "message": "undefined function 'f'", "line": 1})
         self.assertIsNotNone(r["ast"])
         self.assertIsNone(r["bytecode"])
 
