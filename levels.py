@@ -356,7 +356,7 @@ LEVELS = [
         hint="The error names the line where a statement should have ended. What ends every statement in MiniLang?",
     ),
     Level(
-        id="b3", track="bug", title="Break room", bug_stage="compile", par_changes=1,
+        id="b3", track="bug", title="Break room", bug_stage="semantic", par_changes=1,
         brief="first_big(n) should return the first number from 1 to n whose square is bigger than 50, "
               "or 0 if there isn't one. The compiler refuses it.",
         starter="# B3 · Break room\n# first_big(n): the first i in 1..n with i * i > 50, or 0 if none.\n"

@@ -1,99 +1,118 @@
-"""Optimizer: constant folding on the AST, then a peephole pass on the bytecode.
+"""Optimizer: three passes that never change what a program prints or which error it raises.
 
-Both passes preserve behaviour exactly: same printed output, same errors.
+  1. Constant propagation (ir.py): data-flow analysis over the control-flow
+     graph finds every variable read whose value is the same constant on
+     every path. Those reads become literals.
+  2. Constant folding on the AST: 2 * 3 + 4 becomes 10, `0 and f()` becomes 0.
+  3. A peephole pass on the bytecode: constant branches, jump threading,
+     jumps to the next instruction and unreachable code.
+
+Propagation feeds folding: after `x = 10; y = x * 2;` the read of x becomes 10,
+so x * 2 folds to 20, and a later `if y > 5` becomes a constant branch that the
+peephole pass removes.
 """
 
 from ast_nodes import (ArrayLit, Assign, BinOp, Block, Call, ExprStmt, For, FuncDef,
                        If, Index, IndexAssign, LogicalOp, Number, Print, Program,
-                       Return, UnaryOp, While)
+                       Return, UnaryOp, Var, While)
 from compiler import BINARY_OPCODES, Instruction, compile_program
+from ir import constant_reads
 from vm import apply_binary
 
 JUMPS = {"JUMP", "JUMP_IF_FALSE"}
 HAS_TARGET = JUMPS | {"CALL"}  # instructions whose arg is a code address
 
 
-# ======================= Pass 1: AST constant folding =======================
+# ======================= Pass 2: AST constant folding =======================
 
-def _fold_optional(node):
-    return None if node is None else fold_constants(node)
+def fold_constants(node, constants=None):
+    """Return a new AST where constant sub-expressions are pre-computed.
 
-
-def fold_constants(node):
-    """Return a new AST where constant sub-expressions are pre-computed."""
-    if isinstance(node, Program):
-        return Program([fold_constants(s) for s in node.statements], line=node.line)
-    if isinstance(node, Block):
-        return Block([fold_constants(s) for s in node.statements], line=node.line)
-    if isinstance(node, FuncDef):
-        return FuncDef(node.name, node.params, fold_constants(node.body), line=node.line)
-    if isinstance(node, Assign):
-        return Assign(node.name, fold_constants(node.value), line=node.line)
-    if isinstance(node, Print):
-        return Print(fold_constants(node.value), line=node.line)
-    if isinstance(node, Return):
-        return Return(_fold_optional(node.value), line=node.line)
-    if isinstance(node, ExprStmt):
-        return ExprStmt(fold_constants(node.expr), line=node.line)
-    if isinstance(node, If):
-        return If(fold_constants(node.condition), fold_constants(node.then_body),
-                  _fold_optional(node.else_body), line=node.line)
-    if isinstance(node, While):
-        return While(fold_constants(node.condition), fold_constants(node.body), line=node.line)
-    if isinstance(node, For):
-        return For(_fold_optional(node.init), _fold_optional(node.condition),
-                   _fold_optional(node.update), fold_constants(node.body), line=node.line)
-    if isinstance(node, Call):
-        return Call(node.name, [fold_constants(a) for a in node.args], line=node.line)
-    if isinstance(node, ArrayLit):
-        return ArrayLit([fold_constants(item) for item in node.items], line=node.line)
-    if isinstance(node, Index):
-        return Index(fold_constants(node.target), fold_constants(node.index), line=node.line)
-    if isinstance(node, IndexAssign):
-        return IndexAssign(fold_constants(node.target), fold_constants(node.index),
-                           fold_constants(node.value), line=node.line)
-    if isinstance(node, BinOp):
-        return _fold_binop(node)
-    if isinstance(node, UnaryOp):
-        return _fold_unary(node)
-    if isinstance(node, LogicalOp):
-        return _fold_logical(node)
-    return node  # Number, Var, Break, Continue: nothing to fold
+    constants: optional {id(Var node): value} from constant propagation; those
+    variable reads are treated as literals.
+    """
+    return Folder(constants or {}).fold(node)
 
 
-def _fold_binop(node):
-    left, right = fold_constants(node.left), fold_constants(node.right)
-    opcode = BINARY_OPCODES[node.op]
-    if isinstance(left, Number) and isinstance(right, Number):
-        # Leave x / 0 and x % 0 alone so the VM still raises the error at runtime, with its line.
-        if not (opcode in ("DIV", "MOD") and right.value == 0):
-            return Number(apply_binary(opcode, left.value, right.value), line=node.line)
-    return BinOp(node.op, left, right, line=node.line)
+class Folder:
+    def __init__(self, constants):
+        self.constants = constants
+
+    def fold(self, node):
+        if node is None:
+            return None
+        f = self.fold
+        if isinstance(node, Program):
+            return Program([f(s) for s in node.statements], line=node.line)
+        if isinstance(node, Block):
+            return Block([f(s) for s in node.statements], line=node.line)
+        if isinstance(node, FuncDef):
+            return FuncDef(node.name, node.params, f(node.body), line=node.line)
+        if isinstance(node, Assign):
+            return Assign(node.name, f(node.value), line=node.line)
+        if isinstance(node, Print):
+            return Print(f(node.value), line=node.line)
+        if isinstance(node, Return):
+            return Return(f(node.value), line=node.line)
+        if isinstance(node, ExprStmt):
+            return ExprStmt(f(node.expr), line=node.line)
+        if isinstance(node, If):
+            return If(f(node.condition), f(node.then_body), f(node.else_body), line=node.line)
+        if isinstance(node, While):
+            return While(f(node.condition), f(node.body), line=node.line)
+        if isinstance(node, For):
+            return For(f(node.init), f(node.condition), f(node.update), f(node.body), line=node.line)
+        if isinstance(node, Call):
+            return Call(node.name, [f(a) for a in node.args], line=node.line)
+        if isinstance(node, ArrayLit):
+            return ArrayLit([f(item) for item in node.items], line=node.line)
+        if isinstance(node, Index):
+            return Index(f(node.target), f(node.index), line=node.line)
+        if isinstance(node, IndexAssign):
+            return IndexAssign(f(node.target), f(node.index), f(node.value), line=node.line)
+        if isinstance(node, Var):
+            if id(node) in self.constants:   # proven constant by data-flow analysis
+                return Number(self.constants[id(node)], line=node.line)
+            return node
+        if isinstance(node, BinOp):
+            return self.binop(node)
+        if isinstance(node, UnaryOp):
+            return self.unary(node)
+        if isinstance(node, LogicalOp):
+            return self.logical(node)
+        return node  # Number, Break, Continue: nothing to fold
+
+    def binop(self, node):
+        left, right = self.fold(node.left), self.fold(node.right)
+        opcode = BINARY_OPCODES[node.op]
+        if isinstance(left, Number) and isinstance(right, Number):
+            # Leave x / 0 and x % 0 alone so the VM still raises the error at runtime, with its line.
+            if not (opcode in ("DIV", "MOD") and right.value == 0):
+                return Number(apply_binary(opcode, left.value, right.value), line=node.line)
+        return BinOp(node.op, left, right, line=node.line)
+
+    def unary(self, node):
+        operand = self.fold(node.operand)
+        if isinstance(operand, Number):
+            value = -operand.value if node.op == "-" else (1 if operand.value == 0 else 0)
+            return Number(value, line=node.line)
+        return UnaryOp(node.op, operand, line=node.line)
+
+    def logical(self, node):
+        left, right = self.fold(node.left), self.fold(node.right)
+        if isinstance(left, Number):
+            # The left side alone decides: the right side (even a call) would never run anyway.
+            if node.op == "and" and left.value == 0:
+                return Number(0, line=node.line)
+            if node.op == "or" and left.value != 0:
+                return Number(1, line=node.line)
+            # Otherwise the result is just the truthiness of the right side.
+            if isinstance(right, Number):
+                return Number(1 if right.value != 0 else 0, line=node.line)
+        return LogicalOp(node.op, left, right, line=node.line)
 
 
-def _fold_unary(node):
-    operand = fold_constants(node.operand)
-    if isinstance(operand, Number):
-        value = -operand.value if node.op == "-" else (1 if operand.value == 0 else 0)
-        return Number(value, line=node.line)
-    return UnaryOp(node.op, operand, line=node.line)
-
-
-def _fold_logical(node):
-    left, right = fold_constants(node.left), fold_constants(node.right)
-    if isinstance(left, Number):
-        # The left side alone decides: the right side (even a call) would never run anyway.
-        if node.op == "and" and left.value == 0:
-            return Number(0, line=node.line)
-        if node.op == "or" and left.value != 0:
-            return Number(1, line=node.line)
-        # Otherwise the result is just the truthiness of the right side.
-        if isinstance(right, Number):
-            return Number(1 if right.value != 0 else 0, line=node.line)
-    return LogicalOp(node.op, left, right, line=node.line)
-
-
-# ========================= Pass 2: bytecode peephole ========================
+# ========================= Pass 3: bytecode peephole ========================
 
 def peephole(code):
     """Return optimized bytecode. Repeats the sub-passes until nothing changes."""
@@ -211,10 +230,11 @@ def _remove_unreachable(code):
     return (_compact(code, keep) if changed else code), changed
 
 
-def optimize(program):
-    """Full optimizing compile: fold the AST, generate code, then peephole it."""
+def optimize(program, propagate=True):
+    """Full optimizing compile: propagate and fold constants, generate code, then peephole it."""
     # Compile the original tree once first, only for its checks: folding can
     # remove code (e.g. `0 and missing()`), and a semantic error there must
     # still be reported exactly as it is without the optimizer.
     compile_program(program)
-    return peephole(compile_program(fold_constants(program)))
+    constants = constant_reads(program) if propagate else None
+    return peephole(compile_program(fold_constants(program, constants)))

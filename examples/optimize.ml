@@ -16,8 +16,9 @@ while 0 {                       # loop never runs: removed entirely
     print 888;
 }
 
-print 1 or undefined_var;       # left side decides: folded to 1
-print 0 and undefined_var;      # left side decides: folded to 0
+flag = x * x;                   # not a constant: depends on x at runtime
+print 1 or flag;                # left side decides: folded to 1, flag never read
+print 0 and flag;               # left side decides: folded to 0
 print not (3 > 5);              # folded to 1
 
 i = 3;

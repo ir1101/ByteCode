@@ -11,10 +11,12 @@ import io
 
 from ast_nodes import dump, to_dict
 from compiler import compile_program
-from errors import CompileError, LexError, MiniLangError, ParseError, VMError
+from errors import CompileError, LexError, MiniLangError, ParseError, SemanticError, VMError
+from ir import build_ir
 from lexer import tokenize
 from optimizer import optimize as optimize_program
 from parser import parse
+from semantic import analyze
 from vm import VM
 
 # Safety limits for code submitted over the network.
@@ -24,7 +26,8 @@ MAX_OUTPUT_LINES = 10_000
 MAX_TRACE_STEPS = 5_000
 MAX_CALL_DEPTH = 1_000
 
-STAGE_NAMES = {LexError: "lex", ParseError: "parse", CompileError: "compile", VMError: "runtime"}
+STAGE_NAMES = {LexError: "lex", ParseError: "parse", SemanticError: "semantic",
+               CompileError: "compile", VMError: "runtime"}
 
 
 def token_to_dict(tok):
@@ -49,14 +52,18 @@ def run_pipeline(source, optimize=True, trace=False, max_steps=MAX_STEPS,
     program starts (how game levels pass test data in, since MiniLang has no
     input statement).
 
-    Keys: ok, tokens, ast, ast_dump, bytecode, bytecode_unoptimized, optimizer,
-    output, steps, trace, trace_truncated, error. A stage that never ran is None.
+    Keys: ok, tokens, ast, ast_dump, symbols, warnings, ir, bytecode,
+    bytecode_unoptimized, optimizer, output, steps, trace, trace_truncated,
+    error. A stage that never ran is None.
     """
     result = {
         "ok": False,
         "tokens": None,
         "ast": None,
         "ast_dump": None,
+        "symbols": None,
+        "warnings": [],
+        "ir": None,
         "bytecode": None,
         "bytecode_unoptimized": None,
         "optimizer": {"enabled": optimize, "before": None, "after": None},
@@ -79,6 +86,11 @@ def run_pipeline(source, optimize=True, trace=False, max_steps=MAX_STEPS,
         tree = parse(tokens)
         result["ast"] = to_dict(tree)
         result["ast_dump"] = dump(tree)  # the same text tree main.py --debug prints
+
+        analysis = analyze(tree, predefined=(inputs or {}).keys())
+        result["symbols"] = analysis.to_dict()
+        result["warnings"] = result["symbols"]["warnings"]
+        result["ir"] = build_ir(tree).to_dict()  # three-address code, CFG, constant facts
 
         plain = compile_program(tree)
         code = optimize_program(tree) if optimize else plain
@@ -103,7 +115,7 @@ def run_pipeline(source, optimize=True, trace=False, max_steps=MAX_STEPS,
     except RecursionError:
         # The parser and compiler are recursive, so absurdly deep nesting such as
         # ((((((...)))))) can exhaust Python's stack. Report it instead of crashing.
-        stage = "parse" if result["ast"] is None else "compile"
+        stage = "parse" if result["ast"] is None else "semantic" if result["symbols"] is None else "compile"
         result["error"] = {"stage": stage, "line": None,
                            "message": "program is nested too deeply to compile"}
     finally:

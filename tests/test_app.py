@@ -39,7 +39,7 @@ class AppTests(unittest.TestCase):
         cases = [
             ("x = 1;\ny = 2 @ 3;", "lex", 2),
             ("x = 1\nprint x;", "parse", 1),
-            ("print nope();", "compile", 1),
+            ("print nope();", "semantic", 1),
             ("print 1;\nprint 1 / 0;", "runtime", 2),
         ]
         for source, stage, line in cases:
