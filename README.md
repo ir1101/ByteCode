@@ -17,10 +17,16 @@ python main.py examples/demo.ml --debug            # show tokens, AST, bytecode,
 python main.py examples/demo.ml --trace            # show each instruction and the stack after it
 python main.py examples/optimize.ml --debug --no-opt   # compare with the optimizer switched off
 python app.py                                      # web playground on http://127.0.0.1:5000
+python app.py --lan                                # same, plus every device on your Wi-Fi (prints the address)
 python -m unittest discover -s tests -t . -v       # run the test suite
 ```
 
 The web playground needs Flask once: `python -m pip install flask`.
+
+**Sharing on a local network.** `python app.py --lan` listens on every network interface and prints addresses like `http://172.20.10.2:5000`. Anyone on the same Wi-Fi or hotspot can open that address, as long as the server keeps running on your machine.
+- **Windows firewall:** it may ask the first time; allow Python.
+- **Campus Wi-Fi:** networks often block device-to-device traffic. A phone hotspot works.
+- **Safety:** submitted code only runs inside the MiniLang VM, which can't touch files or the network and is limited in steps, output and call depth. Still, only use `--lan` on networks you trust.
 
 ## Web playground (`app.py`)
 

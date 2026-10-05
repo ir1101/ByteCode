@@ -109,6 +109,13 @@ class AppTests(unittest.TestCase):
         self.assertEqual(self.client.post("/check", json={"level": "c1"}).status_code, 400)
         self.assertEqual(self.client.post("/check", data="x", content_type="application/json").status_code, 400)
 
+    def test_lan_addresses_are_real_network_addresses(self):
+        from app import lan_addresses
+        for ip in lan_addresses():
+            parts = ip.split(".")
+            self.assertEqual(len(parts), 4, ip)
+            self.assertFalse(ip.startswith(("127.", "0.", "169.254.")), ip)
+
     def test_oversized_body_rejected(self):
         resp = self.client.post("/run", data="x" * 1_100_000, content_type="application/json")
         self.assertEqual(resp.status_code, 413)
