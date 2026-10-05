@@ -113,6 +113,7 @@ class Analyzer:
         for fn in self.result.functions.values():
             for param in fn.params:
                 fn.symbols[param] = Symbol(param, "parameter", fn.line)
+                fn.symbols[param].assigned.append(fn.line)  # given a value on every call
             for name, line in assignments_in(fn.node.body):
                 if name not in fn.symbols:
                     fn.symbols[name] = Symbol(name, "local", line)

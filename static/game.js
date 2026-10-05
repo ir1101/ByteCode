@@ -13,9 +13,9 @@
   const BY_ID = Object.fromEntries(LEVELS.map((lv) => [lv.id, lv]));
   const TRACKS = [
     { id: "challenge", name: "Challenges", blurb: "Write programs that pass hidden tests. Extra stars go to small and fast code." },
-    { id: "bug", name: "Bug hunts", blurb: "Broken programs, in pipeline order: lexer, parser, compiler, VM, logic. Extra stars go to the smallest fix." },
+    { id: "bug", name: "Bug hunts", blurb: "Broken programs, in pipeline order: lexer, parser, semantic analysis, VM, logic. Extra stars go to the smallest fix." },
   ];
-  const STAGE_NAMES = { lex: "lexer error", parse: "parse error", compile: "compile error", runtime: "runtime error", logic: "wrong output" };
+  const STAGE_NAMES = { lex: "lexer error", parse: "parse error", semantic: "semantic error", compile: "compile error", runtime: "runtime error", logic: "wrong output" };
 
   const fmt = (n) => Number(n).toLocaleString();
   const CHECK_KEYS = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent) ? "⌘ ⇧ ↵" : "Ctrl ⇧ ↵";
@@ -80,7 +80,7 @@
     { id: "deep", name: "Down the Rabbit Hole", desc: "Reach a call depth of 5 or more.", xp: 50 },
     { id: "optimizer", name: "Optimizer's Friend", desc: "Have the optimizer remove 10 or more instructions.", xp: 50 },
     { id: "crash", name: "Crash Test Dummy", desc: "Hit a runtime error.", xp: 25 },
-    { id: "collector", name: "Error Collector", desc: "Meet a lexer, parse, compile and runtime error.", xp: 75 },
+    { id: "collector", name: "Error Collector", desc: "Meet a lexer, parse, semantic and runtime error.", xp: 75 },
     { id: "stuck", name: "Stuck in a Loop", desc: "Run into the VM's step limit.", xp: 25 },
     { id: "loops", name: "Loop de Loop", desc: "Run a program that uses for, while, break and continue.", xp: 50 },
     { id: "first-star", name: "First Star", desc: "Earn a star on any level.", xp: 25 },
@@ -590,7 +590,7 @@
       if (result.ok) unlock("hello");
 
       const stage = result.error && result.error.stage;
-      if (["lex", "parse", "compile", "runtime"].includes(stage)) {
+      if (["lex", "parse", "semantic", "runtime"].includes(stage)) {
         if (!progress.errorsSeen.includes(stage)) {
           progress.errorsSeen.push(stage);
           saveProgress();

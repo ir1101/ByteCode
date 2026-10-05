@@ -35,6 +35,7 @@
   const STAGE_LABEL = {
     lex: "Lexer error",
     parse: "Parse error",
+    semantic: "Semantic error",
     compile: "Compile error",
     runtime: "Runtime error",
     input: "Input error",
@@ -162,6 +163,7 @@
     tab: "output",
     astView: "tree",
     bcView: "optimized",
+    irView: "tac",      // IR tab: "tac" or "optimized" (after constant propagation)
     stale: false,     // editor changed since the last run
     dirty: false,     // editor differs from the loaded example
     running: false,
@@ -186,7 +188,7 @@
 
   // --------------------------------------------------------------------- tabs
 
-  const TABS = ["level", "tokens", "ast", "bytecode", "output"]; // "level" is only shown while playing
+  const TABS = ["level", "tokens", "ast", "symbols", "ir", "bytecode", "output"]; // "level" is only shown while playing
 
   function selectTab(name, { focus = false } = {}) {
     state.tab = name;
@@ -200,6 +202,7 @@
     if (focus) $(`#tab-${name}`).focus();
     applyStepHighlight();
     if (name === "bytecode") scrollCurrentInstructionIntoView();
+    if (name === "ir") drawIrEdges();
     emit("tab", name);
   }
 
@@ -291,9 +294,12 @@
     if (result.error && result.error.line && !result.error.in_test_code) {
       editor.mark("error", result.error.line, "cm-line-error");
     }
+    markWarnings(result.warnings);
 
     renderTokens();
     renderAst();
+    renderSymbols();
+    renderIr();
     renderBytecode();
     renderOutput();
     updateBadges();
@@ -306,7 +312,7 @@
 
   // Snapshot the panels' first-run content so results can be cleared later.
   const pristine = {};
-  for (const id of ["tokens-body", "ast-body", "bytecode-body"]) pristine[id] = $(`#${id}`).cloneNode(true);
+  for (const id of ["tokens-body", "ast-body", "symbols-body", "ir-body", "bytecode-body"]) pristine[id] = $(`#${id}`).cloneNode(true);
 
   /** Forget the last run and show every panel's empty state again. */
   function clearResults() {
@@ -317,10 +323,12 @@
     for (const [id, node] of Object.entries(pristine)) $(`#${id}`).replaceChildren(...node.cloneNode(true).childNodes);
     $("#ast-toolbar").hidden = true;
     $("#bytecode-toolbar").hidden = true;
+    $("#ir-toolbar").hidden = true;
     $("#output-empty").hidden = false;
     $("#output-result").hidden = true;
     $("#stale-note").hidden = true;
-    for (const t of ["tokens", "ast", "bytecode", "output"]) $(`#badge-${t}`).hidden = true;
+    for (const t of ["tokens", "ast", "symbols", "ir", "bytecode", "output"]) $(`#badge-${t}`).hidden = true;
+    unmarkWarnings();
     editor.unmark("hover");
     editor.unmark("step");
     editor.unmark("error");
@@ -352,6 +360,7 @@
         ? `${plural(after, "instruction")} (${fmt(before)} before optimizing)`
         : plural(r.bytecode.length, "instruction"));
     }
+    if (r.warnings && r.warnings.length) bits.push(plural(r.warnings.length, "warning"));
     if (r.steps) bits.push(`${fmt(r.steps)} VM steps`);
     if (r.output && r.output.length) bits.push(`${plural(r.output.length, "line")} printed`);
     $("#status-meta").textContent = bits.join("  ·  ");
@@ -359,14 +368,18 @@
 
   function updateBadges() {
     const r = state.result;
-    const set = (id, text, isError = false) => {
+    const set = (id, text, isError = false, isWarning = false) => {
       const badge = $(`#badge-${id}`);
       badge.hidden = text === null;
       badge.textContent = text ?? "";
       badge.classList.toggle("is-error", isError);
+      badge.classList.toggle("is-warning", isWarning);
     };
     set("tokens", r.tokens ? fmt(r.tokens.length) : null);
     set("ast", null);
+    const warningCount = (r.warnings || []).length;
+    set("symbols", warningCount ? `${warningCount} ⚠` : r.symbols ? "✓" : null, false, warningCount > 0);
+    set("ir", r.ir ? fmt(r.ir.stats.blocks) : null);
     set("bytecode", r.bytecode ? fmt(r.bytecode.length) : null);
     if (r.error) set("output", "!", true);
     else set("output", r.output.length ? fmt(r.output.length) : null);
@@ -509,6 +522,217 @@
     });
   });
 
+  // ------------------------------------------------------- warnings (semantic)
+
+  const WARNING_LABEL = {
+    "maybe-unassigned": "may be unassigned",
+    "scope-trap": "scope trap",
+    unreachable: "unreachable",
+    unused: "unused",
+  };
+  let warningKinds = [];
+
+  function markWarnings(list) {
+    unmarkWarnings();
+    (list || []).forEach((w, i) => {
+      if (!w.line) return;
+      const kind = `warning-${i}`;
+      editor.mark(kind, w.line, "cm-line-warning");
+      warningKinds.push(kind);
+    });
+  }
+
+  function unmarkWarnings() {
+    warningKinds.forEach((kind) => editor.unmark(kind));
+    warningKinds = [];
+  }
+
+  function warningItem(w) {
+    return el("li", { class: "warning", dataset: { line: w.line ?? "" } },
+      w.line
+        ? el("button", { class: "warning-line", type: "button", title: "Show this line in the editor",
+            onclick: () => editor.goTo(w.line) }, `line ${w.line}`)
+        : null,
+      el("span", { class: "warning-code" }, WARNING_LABEL[w.code] || w.code),
+      el("span", { class: "warning-msg" }, w.message));
+  }
+
+  function warningSummary(list) {
+    return el("div", { class: "warning-box" },
+      el("p", { class: "warning-title" },
+        `${plural(list.length, "warning")} from semantic analysis`,
+        el("button", { class: "btn-link", type: "button", onclick: () => selectTab("symbols", { focus: true }) },
+          "Open the symbol table")),
+      el("ul", { class: "warning-list" }, list.slice(0, 3).map(warningItem)),
+      list.length > 3 ? el("p", { class: "muted" }, `and ${list.length - 3} more in the Symbols tab.`) : null);
+  }
+
+  // ------------------------------------------------------------ symbol table
+
+  const lineList = (lines) => (lines && lines.length ? lines.join(", ") : "–");
+
+  function symbolTable(rows, emptyText) {
+    if (!rows.length) return el("p", { class: "sym-empty" }, emptyText);
+    return el("table", { class: "data-table sym-table" },
+      el("thead", null, el("tr", null,
+        el("th", { scope: "col" }, "Name"), el("th", { scope: "col" }, "Kind"),
+        el("th", { scope: "col" }, "Assigned on"), el("th", { scope: "col" }, "Read on"))),
+      el("tbody", null, rows.map((row) =>
+        el("tr", { dataset: { line: row.line ?? (row.reads && row.reads[0]) ?? "" } },
+          el("td", { class: "sym-name" }, row.name),
+          el("td", null, el("span", { class: `sym-kind kind-${row.kind.replace(/\W+/g, "-")}` }, row.kind)),
+          el("td", { class: "num-cell" }, lineList(row.assigned)),
+          el("td", { class: "num-cell" }, lineList(row.reads))))));
+  }
+
+  function renderSymbols() {
+    const body = $("#symbols-body");
+    const r = state.result;
+    body.replaceChildren();
+    if (!r.symbols) return body.append(blocked("symbol table"));
+    const s = r.symbols;
+
+    const sections = [];
+    sections.push(s.warnings.length
+      ? el("section", { class: "sym-section" },
+          el("h3", { class: "section-label" }, `Warnings · ${s.warnings.length}`),
+          el("ul", { class: "warning-list" }, s.warnings.map(warningItem)))
+      : el("p", { class: "sym-clean" },
+          "No warnings. Every variable is assigned before it's read, and nothing is unused or unreachable."));
+
+    sections.push(el("section", { class: "sym-section" },
+      el("h3", { class: "section-label" }, "Global scope"),
+      symbolTable(s.globals, "No global variables.")));
+
+    for (const fn of s.functions) {
+      const rows = fn.symbols.concat(fn.globals_read.map((g) => ({ name: g.name, kind: "global (read)", reads: g.reads })));
+      sections.push(el("section", { class: "sym-section" },
+        el("h3", { class: "sym-fn-title", dataset: { line: fn.line } },
+          el("span", { class: "sym-fn" }, fn.signature),
+          el("span", { class: "sym-fn-meta" },
+            `defined on line ${fn.line} · ${fn.calls.length ? `called on line${fn.calls.length > 1 ? "s" : ""} ${fn.calls.join(", ")}` : "never called"}`)),
+        symbolTable(rows, "No parameters or locals.")));
+    }
+    body.append(...sections);
+  }
+
+  // ----------------------------------------------------------------------- IR
+
+  const isTemp = (name) => /^t\d+$/.test(name);
+
+  function renderIr() {
+    const body = $("#ir-body");
+    const r = state.result;
+    body.replaceChildren();
+    $("#ir-toolbar").hidden = !r.ir;
+    if (!r.ir) return body.append(blocked("intermediate representation"));
+
+    const optimized = state.irView === "optimized";
+    for (const seg of $$("[data-ir-view]")) seg.setAttribute("aria-pressed", String(seg.dataset.irView === state.irView));
+    const st = r.ir.stats;
+    $("#ir-note").textContent = `${plural(st.blocks, "basic block")} · ${plural(st.constant_reads, "constant read")} proven`
+      + (st.unreachable_blocks ? ` · ${plural(st.unreachable_blocks, "unreachable block")}` : "");
+
+    for (const proc of r.ir.procedures) {
+      const cfg = el("div", { class: "cfg", dataset: { proc: proc.name } },
+        proc.blocks.map((b) => irBlock(b, optimized)));
+      body.append(el("section", { class: "ir-proc" },
+        el("h3", { class: "ir-proc-title" }, proc.name === "main" ? "main (top-level code)" : proc.name),
+        cfg));
+      cfg.__blocks = proc.blocks;
+    }
+    if (state.tab === "ir") drawIrEdges();
+  }
+
+  function irBlock(b, optimized) {
+    const facts = Object.entries(b.constants_in || {}).filter(([name]) => !isTemp(name));
+    const head = el("div", { class: "ir-block-head" },
+      el("span", { class: "ir-block-id" }, b.id),
+      b.label ? el("span", { class: "ir-block-label" }, `${b.label}:`) : null,
+      !b.reachable ? el("span", { class: "ir-dead" }, "unreachable") : null,
+      el("span", { class: "ir-succ" }, b.succ.length ? `→ ${b.succ.join(", ")}` : "→ exit"));
+
+    let lines;
+    if (optimized && !b.reachable) {
+      lines = [el("div", { class: "ir-line muted" }, "removed: no path reaches this block")];
+    } else {
+      const text = optimized ? b.optimized : b.lines;
+      lines = text.length
+        ? text.map((line, i) => el("div", { class: "ir-line", dataset: { line: optimized ? "" : (b.source_lines[i] ?? "") } }, line))
+        : [el("div", { class: "ir-line muted" }, "(empty)")];
+    }
+
+    return el("div", { class: `ir-block${b.reachable ? "" : " is-dead"}`, id: null, dataset: { block: b.id } },
+      head,
+      facts.length
+        ? el("div", { class: "ir-facts", title: "Constants known on entry to this block" },
+            facts.map(([name, value]) => el("span", { class: "ir-fact" }, `${name} = ${value}`)))
+        : null,
+      el("div", { class: "ir-code" }, lines));
+  }
+
+  const SVG_NS = "http://www.w3.org/2000/svg";
+  function svg(tag, attrs) {
+    const node = document.createElementNS(SVG_NS, tag);
+    for (const [k, v] of Object.entries(attrs || {})) node.setAttribute(k, v);
+    return node;
+  }
+
+  /** Draw the control-flow edges. Needs the panel visible, so it runs when the IR tab opens. */
+  function drawIrEdges() {
+    for (const cfg of $$("#ir-body .cfg")) {
+      cfg.querySelector(":scope > svg")?.remove();
+      const blocks = cfg.__blocks || [];
+      const cards = Object.fromEntries([...cfg.querySelectorAll(".ir-block")].map((c) => [c.dataset.block, c]));
+      const width = cfg.clientWidth, height = cfg.scrollHeight;
+      if (!width) continue;
+      const layer = svg("svg", { class: "cfg-edges", width, height, viewBox: `0 0 ${width} ${height}`, "aria-hidden": "true" });
+      const defs = svg("defs");
+      for (const kind of ["fall", "jump", "back"]) {
+        const marker = svg("marker", { id: `arrow-${kind}`, viewBox: "0 0 8 8", refX: "7", refY: "4", markerWidth: "7", markerHeight: "7", orient: "auto-start-reverse" });
+        marker.append(svg("path", { d: "M0,0 L8,4 L0,8 z", class: `arrow-${kind}` }));
+        defs.append(marker);
+      }
+      layer.append(defs);
+
+      const box = (id) => {
+        const c = cards[id];
+        return { top: c.offsetTop, bottom: c.offsetTop + c.offsetHeight, left: c.offsetLeft, right: c.offsetLeft + c.offsetWidth,
+                 mid: c.offsetTop + Math.min(22, c.offsetHeight / 2) };
+      };
+      let rightLane = 0, leftLane = 0;
+      blocks.forEach((b, i) => {
+        for (const target of b.succ) {
+          const j = blocks.findIndex((x) => x.id === target);
+          const from = box(b.id), to = box(target);
+          if (j === i + 1) {           // fall through to the next block: straight down
+            const x = from.left + 28;
+            layer.append(svg("path", { d: `M${x},${from.bottom} L${x},${to.top - 1}`, class: "edge edge-fall", "marker-end": "url(#arrow-fall)" }));
+          } else if (j > i) {          // forward jump: route down the right-hand side
+            const x = from.right + 14 + (rightLane++ % 4) * 9;
+            layer.append(svg("path", { d: `M${from.right},${from.mid} H${x} V${to.mid} H${to.right + 1}`, class: "edge edge-jump", "marker-end": "url(#arrow-jump)" }));
+          } else {                     // back edge (a loop): route up the left-hand side
+            const x = from.left - 14 - (leftLane++ % 4) * 9;
+            layer.append(svg("path", { d: `M${from.left},${from.mid + 8} H${x} V${to.mid} H${to.left - 1}`, class: "edge edge-back", "marker-end": "url(#arrow-back)" }));
+          }
+        }
+      });
+      cfg.prepend(layer);
+    }
+  }
+
+  for (const seg of $$("[data-ir-view]")) {
+    seg.addEventListener("click", () => {
+      state.irView = seg.dataset.irView;
+      renderIr();
+    });
+  }
+  let irResizeTimer = null;
+  window.addEventListener("resize", () => {
+    clearTimeout(irResizeTimer);
+    irResizeTimer = setTimeout(() => { if (state.tab === "ir") drawIrEdges(); }, 120);
+  });
+
   // ---------------------------------------------------------------- bytecode
 
   function renderBytecode() {
@@ -604,6 +828,10 @@
         ". Check runs every test.");
     }
 
+    const warnSlot = $("#warning-slot");
+    warnSlot.replaceChildren();
+    if (r.warnings && r.warnings.length) warnSlot.append(warningSummary(r.warnings));
+
     const slot = $("#error-slot");
     slot.replaceChildren();
     if (r.error) slot.append(errorBox(r.error, r.output.length));
@@ -615,6 +843,7 @@
     const hints = {
       lex: "The lexer found a character that isn't part of MiniLang.",
       parse: "The code doesn't match MiniLang's grammar. Check for a missing ';', brace or bracket.",
+      semantic: "The grammar is fine, but a name or call doesn't make sense. Semantic analysis caught it before anything ran.",
       compile: "The syntax is fine, but a compile-time check failed.",
       runtime: printedLines
         ? "The program started, printed the output above, then stopped here. Step through below to see the state just before the error."
@@ -773,7 +1002,7 @@
 
   // ------------------------------------------- hover a row -> find its line
 
-  for (const id of ["#tokens-body", "#ast-body", "#bytecode-body"]) {
+  for (const id of ["#tokens-body", "#ast-body", "#symbols-body", "#ir-body", "#bytecode-body"]) {
     const root = $(id);
     root.addEventListener("mouseover", (e) => {
       const row = e.target.closest("[data-line]");
@@ -805,6 +1034,7 @@
       state.stale = true;
       $("#stale-note").hidden = false;
       editor.unmark("error");
+      unmarkWarnings();
       applyStepHighlight();
       setStatus("Edited since last run. Press Run to update.", null);
     }
@@ -853,6 +1083,7 @@
     workspace.style.setProperty("--split", `${p}%`);
     divider.setAttribute("aria-valuenow", String(Math.round(p)));
     editor.refresh();
+    if (state.tab === "ir") drawIrEdges();
     try { localStorage.setItem("minilang.split", String(p)); } catch { /* storage unavailable */ }
   }
 

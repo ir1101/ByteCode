@@ -35,6 +35,19 @@ class AppTests(unittest.TestCase):
         self.assertEqual(r["output"], ["42"])
         self.assertTrue(r["trace"])                        # the page's step-through view
 
+    def test_run_includes_symbols_warnings_and_ir(self):
+        r = self.client.post("/run", json={"source": "x = 1;\nunused = 2;\nprint x;"}).get_json()
+        self.assertEqual([g["name"] for g in r["symbols"]["globals"]], ["x", "unused"])
+        self.assertEqual([(w["line"], w["code"]) for w in r["warnings"]], [(2, "unused")])
+        self.assertGreaterEqual(r["ir"]["stats"]["blocks"], 1)
+        self.assertIn("print 1", r["ir"]["procedures"][0]["blocks"][0]["optimized"])
+
+    def test_page_has_symbols_and_ir_tabs(self):
+        html = self.client.get("/").get_data(as_text=True)
+        self.assertIn('id="tab-symbols"', html)
+        self.assertIn('id="tab-ir"', html)
+        self.assertIn('<option value="arrays.ml">', html)
+
     def test_each_stage_error_is_returned_with_its_line(self):
         cases = [
             ("x = 1;\ny = 2 @ 3;", "lex", 2),
