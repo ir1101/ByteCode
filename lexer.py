@@ -14,7 +14,7 @@ KEYWORDS = {"if", "else", "while", "for", "break", "continue", "print",
 
 # Two-character operators must be tried before their one-character prefixes.
 TWO_CHAR_OPS = {"==", "!=", "<=", ">="}
-ONE_CHAR_OPS = set("+-*/<>=(){};,")
+ONE_CHAR_OPS = set("+-*/%<>=(){}[];,")
 
 
 class Token:

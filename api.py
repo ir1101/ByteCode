@@ -6,6 +6,7 @@ error if any stage fails. Stages that finished before an error are still
 returned, so the UI can show how far the program got.
 """
 
+import copy
 import io
 
 from ast_nodes import dump, to_dict
@@ -94,7 +95,7 @@ def run_pipeline(source, optimize=True, trace=False, max_steps=MAX_STEPS,
 
         vm = VM(code, out=out, max_steps=max_steps, max_output_lines=max_output_lines,
                 max_call_depth=max_call_depth, on_step=on_step)
-        vm.variables.update(inputs or {})
+        vm.variables.update(copy.deepcopy(inputs or {}))  # a level's test lists must not be mutated
         vm.run()
         result["ok"] = True
     except MiniLangError as e:
@@ -111,6 +112,21 @@ def run_pipeline(source, optimize=True, trace=False, max_steps=MAX_STEPS,
     return result
 
 
+def _snapshot(value, seen=frozenset()):
+    """A JSON-safe copy of a VM value. Lists are copied so that later changes
+    (a[0] = 9) can't rewrite earlier steps; a list inside itself becomes "[...]"."""
+    if not isinstance(value, list):
+        return value
+    if id(value) in seen:
+        return "[...]"
+    inner = seen | {id(value)}
+    return [_snapshot(v, inner) for v in value]
+
+
+def _snapshot_vars(variables):
+    return {name: _snapshot(value) for name, value in variables.items()}
+
+
 def _trace_recorder(result, limit):
     """Return an on_step hook that snapshots the VM state after each step."""
     steps = result["trace"]
@@ -124,11 +140,11 @@ def _trace_recorder(result, limit):
             "op": ins.op,
             "arg": ins.arg,
             "line": ins.line,
-            "stack": list(vm.stack),
-            "variables": dict(vm.variables),  # globals
-            "locals": dict(vm.frames[-1].locals) if vm.frames else None,
+            "stack": [_snapshot(v) for v in vm.stack],
+            "variables": _snapshot_vars(vm.variables),  # globals
+            "locals": _snapshot_vars(vm.frames[-1].locals) if vm.frames else None,
             "call_stack": [f.name for f in vm.frames],  # outermost call first
-            "frames": [{"name": f.name, "locals": dict(f.locals)} for f in vm.frames],
+            "frames": [{"name": f.name, "locals": _snapshot_vars(f.locals)} for f in vm.frames],
             "next_pc": vm.pc,
             "lines_printed": vm.lines_printed,  # output[:lines_printed] is visible at this step
         })

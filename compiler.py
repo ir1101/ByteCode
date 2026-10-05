@@ -5,7 +5,7 @@ Instruction set ([arg] where one is taken):
     LOAD [name]           push a variable (current function's locals, then globals)
     STORE [name]          pop into a variable (locals inside a function, else globals)
     POP                   discard the top of stack (result of a call used as a statement)
-    ADD SUB MUL DIV       pop b, pop a, push (a op b)
+    ADD SUB MUL DIV MOD   pop b, pop a, push (a op b)
     EQ NE LT GT LE GE     pop b, pop a, push 1 if true else 0
     NEG                   negate the top of stack
     NOT                   replace top with 1 if it is 0, else 0
@@ -13,6 +13,11 @@ Instruction set ([arg] where one is taken):
     JUMP_IF_FALSE [addr]  pop; jump if the value is 0
     CALL [addr]           push a new frame (remembering where to return) and jump to addr
     RET                   pop the return value, drop the frame, jump back, push the value
+    BUILD_LIST [n]        pop n values, push a new list holding them (first pushed = first item)
+    INDEX                 pop i, pop list, push list[i]
+    STORE_INDEX           pop value, pop i, pop list, set list[i] = value
+    LEN                   pop list, push its length                  (built-in len(a))
+    APPEND                pop value, pop list, append, push new length (built-in append(a, v))
     PRINT                 pop and print
     HALT                  stop execution
 
@@ -25,9 +30,12 @@ from ast_nodes import FuncDef
 from errors import CompileError
 
 BINARY_OPCODES = {
-    "+": "ADD", "-": "SUB", "*": "MUL", "/": "DIV",
+    "+": "ADD", "-": "SUB", "*": "MUL", "/": "DIV", "%": "MOD",
     "==": "EQ", "!=": "NE", "<": "LT", ">": "GT", "<=": "LE", ">=": "GE",
 }
+
+# Built-in functions compile to a single instruction instead of a CALL.
+BUILTINS = {"len": ("LEN", 1), "append": ("APPEND", 2)}
 
 
 class Instruction:
@@ -92,6 +100,8 @@ class Compiler:
         return self.code
 
     def declare_function(self, fn):
+        if fn.name in BUILTINS:
+            raise CompileError(f"'{fn.name}' is a built-in function and can't be redefined", fn.line)
         if fn.name in self.functions:
             first = self.functions[fn.name].line
             raise CompileError(f"function '{fn.name}' is already defined on line {first}", fn.line)
@@ -227,7 +237,32 @@ class Compiler:
         self.visit(node.operand)
         self.emit("NEG" if node.op == "-" else "NOT", line=node.line)
 
+    def visit_ArrayLit(self, node):
+        for item in node.items:
+            self.visit(item)
+        self.emit("BUILD_LIST", len(node.items), node.line)
+
+    def visit_Index(self, node):
+        self.visit(node.target)
+        self.visit(node.index)
+        self.emit("INDEX", line=node.line)
+
+    def visit_IndexAssign(self, node):
+        self.visit(node.target)
+        self.visit(node.index)
+        self.visit(node.value)
+        self.emit("STORE_INDEX", line=node.line)
+
     def visit_Call(self, node):
+        if node.name in BUILTINS:
+            opcode, arity = BUILTINS[node.name]
+            if len(node.args) != arity:
+                raise CompileError(f"built-in '{node.name}' takes {arity} argument(s), "
+                                   f"but {len(node.args)} were given", node.line)
+            for arg in node.args:
+                self.visit(arg)
+            self.emit(opcode, line=node.line)
+            return
         fn = self.functions.get(node.name)
         if fn is None:
             raise CompileError(f"undefined function '{node.name}'", node.line)

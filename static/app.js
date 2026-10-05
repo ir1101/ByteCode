@@ -43,7 +43,10 @@
   };
 
   const FLOW_OPS = new Set(["JUMP", "JUMP_IF_FALSE", "CALL", "RET", "HALT"]);
-  const MATH_OPS = new Set(["ADD", "SUB", "MUL", "DIV", "NEG", "EQ", "NE", "LT", "GT", "LE", "GE", "NOT"]);
+  const MATH_OPS = new Set(["ADD", "SUB", "MUL", "DIV", "MOD", "NEG", "EQ", "NE", "LT", "GT", "LE", "GE", "NOT"]);
+
+  /** A VM value as MiniLang prints it: 5, or [1, [2, 3]] for lists. */
+  const showValue = (v) => (Array.isArray(v) ? `[${v.map(showValue).join(", ")}]` : String(v));
   const TARGET_OPS = new Set(["JUMP", "JUMP_IF_FALSE", "CALL"]);
 
   // ------------------------------------------------------------------- editor
@@ -61,8 +64,8 @@
         { regex: /\d+/, token: "number" },
         { regex: /[A-Za-z_]\w*(?=\s*\()/, token: "variable-2" },
         { regex: /[A-Za-z_]\w*/, token: "variable" },
-        { regex: /==|!=|<=|>=|[-+*/<>=]/, token: "operator" },
-        { regex: /[{}()]/, token: "bracket" },
+        { regex: /==|!=|<=|>=|[-+*/%<>=]/, token: "operator" },
+        { regex: /[{}()[\]]/, token: "bracket" },
       ],
       meta: { lineComment: "#" },
     });
@@ -700,7 +703,7 @@
     } else {
       [...s.stack].reverse().forEach((value, k) => {
         stack.append(el("li", { class: k === 0 ? "is-top" : null },
-          el("span", null, String(value)),
+          el("span", null, showValue(value)),
           k === 0 ? el("span", { class: "stack-top" }, "top") : null));
       });
     }
@@ -730,9 +733,9 @@
         current ? el("span", { class: "frame-badge" }, "active") : null),
       entries.length
         ? el("table", { class: "vars" }, el("tbody", null, entries.map(([name, value]) =>
-            el("tr", { class: previous && previous[name] !== value ? "is-changed" : null },
+            el("tr", { class: previous && (!(name in previous) || showValue(previous[name]) !== showValue(value)) ? "is-changed" : null },
               el("th", { scope: "row" }, name),
-              el("td", null, String(value))))))
+              el("td", null, showValue(value))))))
         : el("p", { class: "frame-empty" }, isGlobals ? "No variables yet" : "No locals yet"));
   }
 

@@ -4,11 +4,29 @@ import sys
 
 from errors import VMError
 
-BINARY_OPS = {"ADD", "SUB", "MUL", "DIV", "EQ", "NE", "LT", "GT", "LE", "GE"}
+BINARY_OPS = {"ADD", "SUB", "MUL", "DIV", "MOD", "EQ", "NE", "LT", "GT", "LE", "GE"}
+SYMBOLS = {"ADD": "+", "SUB": "-", "MUL": "*", "DIV": "/", "MOD": "%",
+           "LT": "<", "GT": ">", "LE": "<=", "GE": ">="}
+
+
+def type_name(value):
+    return "a list" if isinstance(value, list) else "a number"
+
+
+def _trunc_div(a, b):
+    """Integer division that rounds toward zero (like C/Java), not Python's floor."""
+    q = abs(a) // abs(b)
+    return q if (a >= 0) == (b >= 0) else -q
 
 
 def apply_binary(op, a, b, line=None):
     """Compute a binary opcode. Shared with the optimizer so folding matches runtime."""
+    if op == "EQ":
+        return int(a == b)  # == and != also compare lists, item by item
+    if op == "NE":
+        return int(a != b)
+    if isinstance(a, list) or isinstance(b, list):
+        raise VMError(f"'{SYMBOLS[op]}' needs two numbers, not {type_name(a)} and {type_name(b)}", line)
     if op == "ADD":
         return a + b
     if op == "SUB":
@@ -18,13 +36,12 @@ def apply_binary(op, a, b, line=None):
     if op == "DIV":
         if b == 0:
             raise VMError("division by zero", line)
-        # Truncate toward zero (like C/Java), not Python's floor division.
-        q = abs(a) // abs(b)
-        return q if (a >= 0) == (b >= 0) else -q
-    return int({
-        "EQ": a == b, "NE": a != b, "LT": a < b,
-        "GT": a > b, "LE": a <= b, "GE": a >= b,
-    }[op])
+        return _trunc_div(a, b)
+    if op == "MOD":
+        if b == 0:
+            raise VMError("modulo by zero", line)
+        return a - b * _trunc_div(a, b)  # sign follows a, so a == (a / b) * b + a % b
+    return int({"LT": a < b, "GT": a > b, "LE": a <= b, "GE": a >= b}[op])
 
 
 class Frame:
@@ -58,6 +75,24 @@ class VM:
         if not self.stack:
             raise VMError("stack underflow", ins.line)
         return self.stack.pop()
+
+    def pop_number(self, ins, what):
+        value = self.pop(ins)
+        if isinstance(value, list):
+            raise VMError(f"{what} must be a number, not a list", ins.line)
+        return value
+
+    def pop_list(self, ins, what):
+        value = self.pop(ins)
+        if not isinstance(value, list):
+            raise VMError(f"{what} must be a list, not a number", ins.line)
+        return value
+
+    def check_index(self, lst, index, ins):
+        if isinstance(index, list):
+            raise VMError("a list index must be a number, not a list", ins.line)
+        if not 0 <= index < len(lst):
+            raise VMError(f"index {index} is out of range for a list of length {len(lst)}", ins.line)
 
     def current_scope(self):
         """Where STORE writes: the current call's locals, or globals at top level."""
@@ -94,14 +129,36 @@ class VM:
                 a = self.pop(ins)
                 self.stack.append(apply_binary(op, a, b, ins.line))
             elif op == "NEG":
-                self.stack.append(-self.pop(ins))
+                self.stack.append(-self.pop_number(ins, "the operand of '-'"))
             elif op == "NOT":
-                self.stack.append(1 if self.pop(ins) == 0 else 0)
+                self.stack.append(1 if self.pop_number(ins, "the operand of 'not'") == 0 else 0)
             elif op == "JUMP":
                 self.pc = ins.arg
             elif op == "JUMP_IF_FALSE":
-                if self.pop(ins) == 0:
+                if self.pop_number(ins, "a condition") == 0:
                     self.pc = ins.arg
+            elif op == "BUILD_LIST":
+                items = self.stack[len(self.stack) - ins.arg:] if ins.arg else []
+                del self.stack[len(self.stack) - ins.arg:]
+                self.stack.append(items)
+            elif op == "INDEX":
+                index = self.pop(ins)
+                lst = self.pop_list(ins, "the value being indexed")
+                self.check_index(lst, index, ins)
+                self.stack.append(lst[index])
+            elif op == "STORE_INDEX":
+                value = self.pop(ins)
+                index = self.pop(ins)
+                lst = self.pop_list(ins, "the value being indexed")
+                self.check_index(lst, index, ins)
+                lst[index] = value
+            elif op == "LEN":
+                self.stack.append(len(self.pop_list(ins, "the argument of len()")))
+            elif op == "APPEND":
+                value = self.pop(ins)
+                lst = self.pop_list(ins, "the first argument of append()")
+                lst.append(value)
+                self.stack.append(len(lst))
             elif op == "CALL":
                 if len(self.frames) >= self.max_call_depth:
                     raise VMError(f"maximum call depth of {self.max_call_depth} exceeded "

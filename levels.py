@@ -230,8 +230,7 @@ LEVELS = [
     ),
     Level(
         id="c4", track="challenge", title="Even countdown",
-        brief="Print every even number from n down to 0, including 0. MiniLang has no % operator, "
-              "but x is even exactly when x / 2 * 2 == x.",
+        brief="Print every even number from n down to 0, including 0. A number x is even when x % 2 == 0.",
         starter="# C4 · Even countdown\n# Print the even numbers from n down to 0.\n\n",
         references=("i = n / 2 * 2;\nwhile i >= 0 {\n    print i;\n    i = i - 2;\n}\n",),
         tests=_inputs("n", 7, 6, 0, 1, 10),
@@ -244,12 +243,13 @@ LEVELS = [
               "Fizz, Buzz and FizzBuzz.",
         starter="# C5 · Numeric FizzBuzz\n# 1 to n, with -3 / -5 / -15 for multiples of 3 / 5 / 15.\n\n",
         references=("for i = 1; i <= n; i = i + 1 {\n"
-                    "    if i / 15 * 15 == i {\n        print -15;\n"
-                    "    } else if i / 3 * 3 == i {\n        print -3;\n"
-                    "    } else if i / 5 * 5 == i {\n        print -5;\n"
+                    "    if i % 15 == 0 {\n        print -15;\n"
+                    "    } else if i % 3 == 0 {\n        print -3;\n"
+                    "    } else if i % 5 == 0 {\n        print -5;\n"
                     "    } else {\n        print i;\n    }\n}\n",),
         tests=_inputs("n", 15, 5, 1, 20),
-        hint="Check 15 first: every multiple of 15 is also a multiple of 3 and of 5. Use else if so only one line prints per number.",
+        hint="i % 3 == 0 means i is a multiple of 3. Check 15 first: every multiple of 15 is also a multiple "
+             "of 3 and of 5. Use else if so only one line prints per number.",
     ),
     Level(
         id="c6", track="challenge", title="Factorial",
@@ -289,11 +289,11 @@ LEVELS = [
         brief="Write gcd(a, b), the greatest common divisor of two non-negative numbers. gcd(a, 0) is a.",
         starter="# C9 · GCD\n# Write gcd(a, b). The tests call it, e.g.  print gcd(48, 18);\n\n"
                 "func gcd(a, b) {\n    return 0;   # replace this\n}\n",
-        references=("func gcd(a, b) {\n    while b != 0 {\n        t = b;\n        b = a - a / b * b;\n"
+        references=("func gcd(a, b) {\n    while b != 0 {\n        t = b;\n        b = a % b;\n"
                     "        a = t;\n    }\n    return a;\n}\n",
-                    "func gcd(a, b) {\n    if b == 0 { return a; }\n    return gcd(b, a - a / b * b);\n}\n"),
+                    "func gcd(a, b) {\n    if b == 0 { return a; }\n    return gcd(b, a % b);\n}\n"),
         tests=_calls("print gcd({}, {});", (48, 18), (17, 5), (100, 75), (7, 0), (0, 9)),
-        hint="Euclid: gcd(a, b) = gcd(b, a mod b), and a mod b is a - a / b * b.",
+        hint="Euclid: gcd(a, b) = gcd(b, a % b), and the chain stops when b is 0.",
     ),
     Level(
         id="c10", track="challenge", title="Prime time",
@@ -301,24 +301,49 @@ LEVELS = [
         starter="# C10 · Prime time\n# Write is_prime(n). The tests call it, e.g.  print is_prime(97);\n\n"
                 "func is_prime(n) {\n    return 0;   # replace this\n}\n",
         references=("func is_prime(n) {\n    if n < 2 { return 0; }\n"
-                    "    for d = 2; d * d <= n; d = d + 1 {\n        if n / d * d == n { return 0; }\n    }\n"
+                    "    for d = 2; d * d <= n; d = d + 1 {\n        if n % d == 0 { return 0; }\n    }\n"
                     "    return 1;\n}\n",),
         tests=[Test(epilogue="for i = 1; i <= 30; i = i + 1 { if is_prime(i) { print i; } }"),
                Test(epilogue="print is_prime(97);"), Test(epilogue="print is_prime(91);")],
         hint="You only need to try divisors d while d * d <= n, and you can return as soon as one divides n.",
     ),
+    Level(
+        id="c11", track="challenge", title="Largest in a list",
+        brief="xs is a list of numbers (never empty). Print the largest one. "
+              "xs[i] reads an item and len(xs) gives the length.",
+        starter="# C11 · Largest in a list\n# xs already holds a list, e.g. [3, 9, 2]. Print its largest item.\n\n",
+        references=("m = xs[0];\nfor i = 1; i < len(xs); i = i + 1 {\n"
+                    "    if xs[i] > m { m = xs[i]; }\n}\nprint m;\n",),
+        tests=[Test({"xs": [3, 9, 2]}), Test({"xs": [-5, -2, -9]}), Test({"xs": [7]}),
+               Test({"xs": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]}), Test({"xs": [4, 4, 1]})],
+        hint="Start with m = xs[0], then walk i from 1 to len(xs) - 1, keeping the bigger of m and xs[i].",
+    ),
+    Level(
+        id="c12", track="challenge", title="Sort it",
+        brief="Sort the list xs from smallest to largest, then print the whole list with print xs; "
+              "Lists are changed in place: xs[i] = v overwrites one item.",
+        starter="# C12 · Sort it\n# Sort xs in place, then:  print xs;\n\nprint xs;\n",
+        references=("for i = 1; i < len(xs); i = i + 1 {\n    key = xs[i];\n    j = i - 1;\n"
+                    "    while j >= 0 and xs[j] > key {\n        xs[j + 1] = xs[j];\n        j = j - 1;\n    }\n"
+                    "    xs[j + 1] = key;\n}\nprint xs;\n",),
+        tests=[Test({"xs": [3, 1, 2]}), Test({"xs": [5, 4, 3, 2, 1]}), Test({"xs": [1, 2, 3, 4]}),
+               Test({"xs": [7]}), Test({"xs": []}), Test({"xs": [2, -1, 2, 0, -5, 9]})],
+        hint="Any sort earns a star. For speed, try insertion sort: take each item and slide it left past "
+             "the bigger ones. On a list that's already sorted it barely does any work.",
+    ),
 
     # ------------------------------------------------------------ bug hunts
     Level(
         id="b1", track="bug", title="Alien symbol", bug_stage="lex", par_changes=1,
-        brief="This should print the remainder of n divided by 3, but the lexer rejects it. "
-              "Fix it so the lexer, and every stage after it, is happy.",
-        starter="# B1 · Alien symbol\n# Should print the remainder of n divided by 3.\n"
-                "remainder = n % 3;\nprint remainder;\n",
-        references=("# B1 · Alien symbol\n# Should print the remainder of n divided by 3.\n"
-                    "remainder = n - n / 3 * 3;\nprint remainder;\n",),
-        tests=_inputs("n", 10, 9, 5, 0, 100),
-        hint="MiniLang has no %. For positive numbers, a % b is the same as a - a / b * b.",
+        brief="This should print 1 when both a and b are positive, and 0 otherwise, but the lexer "
+              "rejects it. Someone wrote it in another language's style.",
+        starter="# B1 · Alien symbol\n# Should print 1 if a and b are both positive, otherwise 0.\n"
+                "if a > 0 && b > 0 {\n    print 1;\n} else {\n    print 0;\n}\n",
+        references=("# B1 · Alien symbol\n# Should print 1 if a and b are both positive, otherwise 0.\n"
+                    "if a > 0 and b > 0 {\n    print 1;\n} else {\n    print 0;\n}\n",),
+        tests=[Test({"a": 3, "b": 4}), Test({"a": -1, "b": 4}), Test({"a": 3, "b": -2}),
+               Test({"a": 0, "b": 0}), Test({"a": 5, "b": 1})],
+        hint="&& isn't a MiniLang symbol. MiniLang spells its logical operators as words.",
     ),
     Level(
         id="b2", track="bug", title="Missing piece", bug_stage="parse", par_changes=1,

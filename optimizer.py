@@ -3,8 +3,9 @@
 Both passes preserve behaviour exactly: same printed output, same errors.
 """
 
-from ast_nodes import (Assign, BinOp, Block, Call, ExprStmt, For, FuncDef, If,
-                       LogicalOp, Number, Print, Program, Return, UnaryOp, While)
+from ast_nodes import (ArrayLit, Assign, BinOp, Block, Call, ExprStmt, For, FuncDef,
+                       If, Index, IndexAssign, LogicalOp, Number, Print, Program,
+                       Return, UnaryOp, While)
 from compiler import BINARY_OPCODES, Instruction, compile_program
 from vm import apply_binary
 
@@ -44,6 +45,13 @@ def fold_constants(node):
                    _fold_optional(node.update), fold_constants(node.body), line=node.line)
     if isinstance(node, Call):
         return Call(node.name, [fold_constants(a) for a in node.args], line=node.line)
+    if isinstance(node, ArrayLit):
+        return ArrayLit([fold_constants(item) for item in node.items], line=node.line)
+    if isinstance(node, Index):
+        return Index(fold_constants(node.target), fold_constants(node.index), line=node.line)
+    if isinstance(node, IndexAssign):
+        return IndexAssign(fold_constants(node.target), fold_constants(node.index),
+                           fold_constants(node.value), line=node.line)
     if isinstance(node, BinOp):
         return _fold_binop(node)
     if isinstance(node, UnaryOp):
@@ -57,8 +65,8 @@ def _fold_binop(node):
     left, right = fold_constants(node.left), fold_constants(node.right)
     opcode = BINARY_OPCODES[node.op]
     if isinstance(left, Number) and isinstance(right, Number):
-        # Leave x / 0 alone so the VM still raises the error at runtime, with its line.
-        if not (opcode == "DIV" and right.value == 0):
+        # Leave x / 0 and x % 0 alone so the VM still raises the error at runtime, with its line.
+        if not (opcode in ("DIV", "MOD") and right.value == 0):
             return Number(apply_binary(opcode, left.value, right.value), line=node.line)
     return BinOp(node.op, left, right, line=node.line)
 
