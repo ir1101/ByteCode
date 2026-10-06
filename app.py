@@ -1,9 +1,10 @@
 """MiniLang web frontend: a thin Flask layer over the compiler.
 
     GET  /       the playground page (templates/index.html + static/)
-    POST /run    body {"source": "...", "level"?: "c1"}  ->  JSON with tokens, AST,
-                 bytecode, output and, if a stage failed, the error with its line
-                 number. With "level", the code runs on that level's example test.
+    POST /run    body {"source": "...", "stdin"?: "3 4", "level"?: "c1"}  ->  JSON with
+                 tokens, AST, bytecode, output and, if a stage failed, the errors with
+                 their line numbers. "stdin" holds the numbers `input` statements read.
+                 With "level", the code runs on that level's example test.
     POST /check  body {"level": "c1", "source": "..."}  ->  every test of the level,
                  the score, and the stars earned (see levels.py)
     POST /lint   body {"source": "...", "level"?: "c1"}  ->  {"errors": [...], "warnings": [...]}
@@ -56,19 +57,20 @@ def index():
 @app.post("/run")
 def run():
     body = request.get_json(silent=True)
-    if not isinstance(body, dict) or not isinstance(body.get("source"), str):
-        return bad_request('{"source": "print 1;"}')
+    if (not isinstance(body, dict) or not isinstance(body.get("source"), str)
+            or not isinstance(body.get("stdin", ""), str)):
+        return bad_request('{"source": "input x; print x * 2;", "stdin": "21"}')
 
     level_id = body.get("level")
     if level_id is not None:
         level = LEVELS_BY_ID.get(level_id) if isinstance(level_id, str) else None
         if level is None:
             return jsonify(error=f"unknown level {level_id!r}"), 404
-        return jsonify(run_example(level, body["source"]))
+        return jsonify(run_example(level, body["source"]))   # a level brings its own input
 
-    # lexer -> parser -> compiler (+ optimizer) -> VM. Any MiniLang error is caught
-    # inside run_pipeline and returned as result["error"] = {stage, message, line}.
-    result = run_pipeline(body["source"], optimize=True, trace=True)
+    # lexer -> parser -> semantic -> types -> compiler (+ optimizer) -> VM. Any MiniLang
+    # error is caught inside run_pipeline and returned as result["errors"].
+    result = run_pipeline(body["source"], optimize=True, trace=True, stdin=body.get("stdin", ""))
     return jsonify(result)
 
 

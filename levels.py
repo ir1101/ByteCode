@@ -1,9 +1,10 @@
 """Game levels for the MiniLang playground: challenges and bug hunts.
 
-MiniLang has no input statement, so a test feeds a program in two ways:
+A test feeds a program in up to three ways:
   * inputs   - global variables that already exist when the program starts
                (e.g. n = 7), set directly in the VM, so the player's source
                and its line numbers are untouched;
+  * stdin    - the numbers that `input x;` statements read, e.g. "3 4 0";
   * epilogue - test code appended after the player's last line, e.g.
                `print fact(5);` for levels where you write a function.
 
@@ -25,9 +26,12 @@ CHECK_MAX_OUTPUT_LINES = 1_000
 class Test:
     inputs: dict = field(default_factory=dict)
     epilogue: str = ""
+    stdin: str = ""
 
     def label(self):
         parts = [f"{name} = {value}" for name, value in self.inputs.items()]
+        if self.stdin:
+            parts.append(f"input: {self.stdin}")
         if self.epilogue:
             parts.append(self.epilogue)
         return ", ".join(parts)
@@ -43,7 +47,7 @@ class Level:
     references: tuple     # one or more correct solutions; par is the most lenient
     tests: list
     hint: str
-    bug_stage: str = None     # bug hunts: where the starter fails (lex/parse/compile/runtime/logic)
+    bug_stage: str = None     # bug hunts: where the starter fails (lex/parse/semantic/type/runtime/logic)
     par_changes: int = None   # bug hunts: most changed lines that still earns the 2nd star
     # Filled in by _prepare():
     expected: list = None
@@ -71,7 +75,7 @@ def _program(source, test):
 
 
 def run_test(source, test, **limits):
-    result = run_pipeline(_program(source, test), optimize=True, inputs=test.inputs, **limits)
+    result = run_pipeline(_program(source, test), optimize=True, inputs=test.inputs, stdin=test.stdin, **limits)
     _flag_test_code_error(result, source, test)
     return result
 
@@ -94,7 +98,7 @@ def lint_level(level, source):
     test code is appended (so a function it calls isn't reported unused), but only problems
     in the player's own lines are returned."""
     test = level.tests[0]
-    found = lint(_program(source, test), predefined=test.inputs.keys())
+    found = lint(_program(source, test), predefined=test.inputs)
     last = _user_line_count(source)
     return {key: [item for item in items if not item["line"] or item["line"] <= last]
             for key, items in found.items()}
@@ -103,9 +107,10 @@ def lint_level(level, source):
 def run_example(level, source):
     """Run the player's code on the level's first (example) test, with a full trace."""
     test = level.tests[0]
-    result = run_pipeline(_program(source, test), optimize=True, trace=True, inputs=test.inputs)
+    result = run_pipeline(_program(source, test), optimize=True, trace=True, inputs=test.inputs, stdin=test.stdin)
     _flag_test_code_error(result, source, test)
-    result["harness"] = {"inputs": dict(test.inputs), "epilogue": test.epilogue, "label": test.label()}
+    result["harness"] = {"inputs": dict(test.inputs), "epilogue": test.epilogue, "stdin": test.stdin,
+                         "label": test.label()}
     return result
 
 
@@ -152,7 +157,7 @@ def check_level(level, source):
         steps += r["steps"]
         passed = r["ok"] and r["output"] == level.expected[i]
         tests.append({"label": test.label(), "inputs": dict(test.inputs), "epilogue": test.epilogue,
-                      "passed": passed, "expected": level.expected[i], "output": r["output"],
+                      "stdin": test.stdin, "passed": passed, "expected": level.expected[i], "output": r["output"],
                       "error": r["error"]})
 
     passed = all(t["passed"] for t in tests)
@@ -191,8 +196,9 @@ def public_levels():
             "bug_stage": level.bug_stage,
             "inputs": list(example.inputs),
             "epilogue": example.epilogue,
+            "stdin": example.stdin,
             "example": {"label": example.label(), "inputs": dict(example.inputs),
-                        "epilogue": example.epilogue, "expected": level.expected[0]},
+                        "epilogue": example.epilogue, "stdin": example.stdin, "expected": level.expected[0]},
             "tests_count": len(level.tests),
             "criteria": criteria(level),
             "par": {"size": level.par_size, "steps": level.par_steps, "changes": level.par_changes},
@@ -343,6 +349,18 @@ LEVELS = [
         hint="Any sort earns a star. For speed, try insertion sort: take each item and slide it left past "
              "the bigger ones. On a list that's already sorted it barely does any work.",
     ),
+    Level(
+        id="c13", track="challenge", title="Running total",
+        brief="This time nothing is waiting in a variable: read numbers with input x; until you read a 0, "
+              "then print the total of the numbers before it.",
+        starter="# C13 · Running total\n# input x;  reads the next whole number.\n"
+                "# Keep reading until you get 0, then print the total.\n\n",
+        references=("total = 0;\ninput x;\nwhile x != 0 {\n    total += x;\n    input x;\n}\nprint total;\n",),
+        tests=[Test(stdin="3 4 5 0"), Test(stdin="0"), Test(stdin="10 -2 7 0"), Test(stdin="1 1 1 1 1 1 1 1 0"),
+               Test(stdin="42 0")],
+        hint="Read the first number before the loop, and read the next one at the end of each pass: "
+             "input x; while x != 0 { ...; input x; }",
+    ),
 
     # ------------------------------------------------------------ bug hunts
     Level(
@@ -427,6 +445,19 @@ LEVELS = [
         tests=_inputs("n", 3, 1, 10, 0),
         hint="Assigning to a variable inside a function creates a new local, so the global total never changes. "
              "How else can a function hand a value back?",
+    ),
+    Level(
+        id="b8", track="bug", title="Type trouble", bug_stage="type", par_changes=1,
+        brief="This should print how many numbers xs holds, then their total. Every name is defined, "
+              "but the type checker rejects it before it runs: a value is used as the wrong type.",
+        starter="# B8 · Type trouble\n# Should print len(xs), then xs[0] + xs[1] + ...\n"
+                "count = len(xs);\ntotal = 0;\nfor i = 0; i < count; i += 1 {\n    total += xs;\n}\n"
+                "print count;\nprint total;\n",
+        references=("# B8 · Type trouble\n# Should print len(xs), then xs[0] + xs[1] + ...\n"
+                    "count = len(xs);\ntotal = 0;\nfor i = 0; i < count; i += 1 {\n    total += xs[i];\n}\n"
+                    "print count;\nprint total;\n",),
+        tests=[Test({"xs": [4, 8, 15]}), Test({"xs": []}), Test({"xs": [-3, 3, 10]}), Test({"xs": [7]})],
+        hint="xs is the whole list. Which single number should be added each time round the loop?",
     ),
 ]
 

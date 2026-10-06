@@ -13,7 +13,7 @@ KEYWORD = "KEYWORD"
 OP = "OP"
 EOF = "EOF"
 
-KEYWORDS = {"if", "else", "while", "for", "break", "continue", "print",
+KEYWORDS = {"if", "else", "while", "for", "break", "continue", "print", "input",
             "and", "or", "not", "func", "return"}
 
 # Two-character operators must be tried before their one-character prefixes.

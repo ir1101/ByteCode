@@ -36,6 +36,7 @@
     lex: "Lexer error",
     parse: "Parse error",
     semantic: "Semantic error",
+    type: "Type error",
     compile: "Compile error",
     runtime: "Runtime error",
     input: "Input error",
@@ -61,7 +62,7 @@
       start: [
         { regex: /#.*/, token: "comment" },
         { regex: /(func)(\s+)([A-Za-z_]\w*)/, token: ["keyword", null, "def"] },
-        { regex: /(?:if|else|while|for|break|continue|return|print|func|and|or|not)\b/, token: "keyword" },
+        { regex: /(?:if|else|while|for|break|continue|return|print|input|func|and|or|not)\b/, token: "keyword" },
         { regex: /\d+/, token: "number" },
         { regex: /[A-Za-z_]\w*(?=\s*\()/, token: "variable-2" },
         { regex: /[A-Za-z_]\w*/, token: "variable" },
@@ -272,7 +273,9 @@
       const response = await fetch("/run", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...(state.runContext || {}), source: editor.getValue() }),
+        body: JSON.stringify(state.runContext
+          ? { ...state.runContext, source: editor.getValue() }   // a level brings its own input
+          : { source: editor.getValue(), stdin: $("#stdin").value }),
       });
       let body = null;
       try { body = await response.json(); } catch { /* not JSON */ }
@@ -622,16 +625,21 @@
 
   const lineList = (lines) => (lines && lines.length ? lines.join(", ") : "–");
 
-  function symbolTable(rows, emptyText) {
+  /** An inferred type: "number", "list", "number or list" (or "no value"). */
+  const typeChip = (type) => el("span", { class: `type-chip type-${(type || "unknown").replace(/\W+/g, "-")}` }, type || "?");
+
+  function symbolTable(rows, emptyText, withTypes) {
     if (!rows.length) return el("p", { class: "sym-empty" }, emptyText);
     return el("table", { class: "data-table sym-table" },
       el("thead", null, el("tr", null,
         el("th", { scope: "col" }, "Name"), el("th", { scope: "col" }, "Kind"),
+        withTypes ? el("th", { scope: "col" }, "Type") : null,
         el("th", { scope: "col" }, "Assigned on"), el("th", { scope: "col" }, "Read on"))),
       el("tbody", null, rows.map((row) =>
         el("tr", { dataset: { line: row.line ?? (row.reads && row.reads[0]) ?? "" } },
           el("td", { class: "sym-name" }, row.name),
           el("td", null, el("span", { class: `sym-kind kind-${row.kind.replace(/\W+/g, "-")}` }, row.kind)),
+          withTypes ? el("td", null, typeChip(row.type)) : null,
           el("td", { class: "num-cell" }, lineList(row.assigned)),
           el("td", { class: "num-cell" }, lineList(row.reads))))));
   }
@@ -651,18 +659,32 @@
       : el("p", { class: "sym-clean" },
           "No warnings. Every variable is assigned before it's read, and nothing is unused or unreachable."));
 
+    // Types come from the type checker; they're missing if it found an error.
+    const t = r.types;
+    if (t) {
+      sections.push(el("p", { class: "sym-types-note" },
+        "Types are inferred: MiniLang has no type declarations, so the type checker works out what each name can hold. ",
+        t.elements !== "no value" ? ["Values stored in lists: ", typeChip(t.elements), "."] : null));
+    } else if (r.error && r.error.stage === "type") {
+      sections.push(el("p", { class: "sym-types-note" }, "The type checker found an error, so no types are shown. See Output."));
+    }
+
+    const globals = s.globals.map((g) => ({ ...g, type: t && t.globals[g.name] }));
     sections.push(el("section", { class: "sym-section" },
       el("h3", { class: "section-label" }, "Global scope"),
-      symbolTable(s.globals, "No global variables.")));
+      symbolTable(globals, "No global variables.", !!t)));
 
     for (const fn of s.functions) {
-      const rows = fn.symbols.concat(fn.globals_read.map((g) => ({ name: g.name, kind: "global (read)", reads: g.reads })));
+      const ft = t && t.functions[fn.name];
+      const typeOf = (sym) => (ft ? (sym.kind === "parameter" ? ft.params[sym.name] : ft.locals[sym.name]) : null);
+      const rows = fn.symbols.map((sym) => ({ ...sym, type: typeOf(sym) }))
+        .concat(fn.globals_read.map((g) => ({ name: g.name, kind: "global (read)", reads: g.reads, type: t && t.globals[g.name] })));
       sections.push(el("section", { class: "sym-section" },
         el("h3", { class: "sym-fn-title", dataset: { line: fn.line } },
-          el("span", { class: "sym-fn" }, fn.signature),
+          el("span", { class: "sym-fn" }, ft ? ft.signature.replace(" -> ", " → ") : fn.signature),
           el("span", { class: "sym-fn-meta" },
             `defined on line ${fn.line} · ${fn.calls.length ? `called on line${fn.calls.length > 1 ? "s" : ""} ${fn.calls.join(", ")}` : "never called"}`)),
-        symbolTable(rows, "No parameters or locals.")));
+        symbolTable(rows, "No parameters or locals.", !!t)));
     }
     body.append(...sections);
   }
@@ -898,6 +920,11 @@
         ". Check runs every test.");
     }
 
+    const inputNote = $("#input-note");
+    const input = r.input || { values: [], used: 0 };
+    inputNote.hidden = !readsInputAtRuntime(r);
+    if (!inputNote.hidden) inputNote.replaceChildren(...inputSummary(input));
+
     const warnSlot = $("#warning-slot");
     warnSlot.replaceChildren();
     if (r.warnings && r.warnings.length) warnSlot.append(warningSummary(r.warnings));
@@ -907,6 +934,25 @@
     if (r.error) slot.append(errorBox(allErrors(r), r.output.length));
 
     renderStepper();
+  }
+
+  /** True when the program that ran has input statements (its bytecode has an INPUT). */
+  const readsInputAtRuntime = (r) => !!(r.bytecode && r.input && r.bytecode.some((ins) => ins.op === "INPUT"));
+
+  /** "Input: 3 4 5 0 · read 2 of 4", with the values not read yet dimmed. */
+  function inputSummary(input, used = input.used) {
+    if (!input.values.length) {
+      return [state.runContext ? "Input: none." : "Input: none given. Type numbers for input statements into the Input box under the editor."];
+    }
+    const shown = input.values.slice(0, 40);
+    return [
+      "Input: ",
+      shown.map((v, i) => [i ? " " : "", el("code", { class: i < used ? "is-read" : "is-unread" }, v)]),
+      input.values.length > shown.length ? " …" : "",
+      used === input.values.length
+        ? (used ? ` · all ${plural(used, "value")} read` : " · nothing given")
+        : ` · read ${fmt(used)} of ${fmt(input.values.length)}`,
+    ].flat(Infinity);
   }
 
   function errorBox(errors, printedLines) {
@@ -922,6 +968,8 @@
       semantic: many
         ? "The grammar is fine, but these names or calls don't make sense. Semantic analysis found all of them before anything ran."
         : "The grammar is fine, but a name or call doesn't make sense. Semantic analysis caught it before anything ran.",
+      type: "Every name is defined, but a value is used as the wrong type: a list where a number is needed, or a number "
+        + "where a list is needed. The type checker proved it before anything ran, so the line would fail every time.",
       compile: "The syntax is fine, but a compile-time check failed.",
       runtime: printedLines
         ? "The program started, printed the output above, then stopped here. Step through below to see the state just before the error."
@@ -1031,8 +1079,11 @@
     });
     $("#step-frames").replaceChildren(...cards);
 
-    // Output printed up to this step.
+    // Output printed up to this step, and the input read so far.
     $("#step-output").textContent = r.output.slice(0, s.lines_printed).join("\n");
+    const stepInput = $("#step-input");
+    stepInput.hidden = !readsInputAtRuntime(r);
+    if (!stepInput.hidden) stepInput.replaceChildren(...inputSummary(r.input, s.input_used || 0));
 
     applyStepHighlight();
   }
@@ -1107,6 +1158,7 @@
   let loading = false; // true while an example is being loaded into the editor
 
   editor.onChange(() => {
+    noticeInput();
     if (loading) return;
     scheduleCheck();
     emit("change");
@@ -1182,6 +1234,33 @@
     const first = problems.find((p) => p.line);
     if (first) editor.goTo(first.line);
   });
+
+  // ------------------------------------------------------- program input
+
+  // Values for `input x;`. The drawer opens by itself when the program starts using input.
+  const stdinPanel = $("#stdin-panel");
+  const stdinBox = $("#stdin");
+  let usedInput = false;
+  const readsInput = (text) => /^[^#]*\binput\b/m.test(text);
+
+  function updateStdinMeta() {
+    const count = stdinBox.value.split(/\s+/).filter(Boolean).length;
+    $("#stdin-meta").textContent = count ? plural(count, "value") : "numbers for input statements";
+  }
+
+  function noticeInput() {
+    const now = readsInput(editor.getValue());
+    if (now && !usedInput) stdinPanel.open = true;
+    usedInput = now;
+  }
+
+  try { stdinBox.value = localStorage.getItem("minilang.stdin") || ""; } catch { /* storage unavailable */ }
+  stdinBox.addEventListener("input", () => {
+    updateStdinMeta();
+    try { localStorage.setItem("minilang.stdin", stdinBox.value); } catch { /* storage unavailable */ }
+  });
+  stdinPanel.addEventListener("toggle", () => editor.refresh());
+  updateStdinMeta();
 
   // ---------------------------------------------------------------- examples
 
@@ -1275,7 +1354,11 @@
     getSource: () => editor.getValue(),
     getTitle: () => $("#file-name").textContent,
     loadSource,
-    setRunContext(ctx) { state.runContext = ctx; scheduleCheck(0); },
+    setRunContext(ctx) {
+      state.runContext = ctx;
+      stdinPanel.hidden = !!ctx;   // a level supplies its own input
+      scheduleCheck(0);
+    },
     run,
     selectTab,
     goToLine: (line) => editor.goTo(line),
@@ -1283,5 +1366,6 @@
   };
 
   selectTab("output");
+  noticeInput();
   scheduleCheck(0);
 })();

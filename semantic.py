@@ -30,7 +30,7 @@ any assigned name are locals; other names are read from the globals.
 import difflib
 
 from ast_nodes import (ArrayLit, Assign, BinOp, Block, Break, Call, Continue, ExprStmt,
-                       For, FuncDef, If, Index, IndexAssign, LogicalOp, Number, Print,
+                       For, FuncDef, If, Index, IndexAssign, Input, LogicalOp, Number, Print,
                        Return, UnaryOp, Var, While)
 from compiler import BUILTINS
 from errors import SemanticError, raise_all
@@ -214,6 +214,8 @@ class Analyzer:
         if isinstance(node, Assign):
             self.expr(node.value, assigned)
             return assigned | {node.name}
+        if isinstance(node, Input):
+            return assigned | {node.name}
         if isinstance(node, IndexAssign):
             for part in (node.target, node.index, node.value):
                 self.expr(part, assigned)
@@ -383,8 +385,8 @@ def meet(a, b):
 
 
 def assignments_in(node):
-    """(name, line) for every plain assignment inside node, not looking into functions."""
-    if isinstance(node, Assign):
+    """(name, line) for every plain assignment (or input) inside node, not looking into functions."""
+    if isinstance(node, (Assign, Input)):
         yield node.name, node.line
     elif isinstance(node, Block):
         for stmt in node.statements:

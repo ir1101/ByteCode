@@ -223,6 +223,43 @@ code, pre, kbd, .CodeMirror, .panel-scroll, .pipeline, .select, .editor-fallback
 
 .editor-wrap { position: relative; flex: 1; min-height: 0; }
 
+/* Program input: a drawer under the editor. */
+.stdin { flex: none; border-top: 1px solid var(--border); background: var(--surface); }
+.stdin-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 16px;
+  color: var(--muted);
+  font: 500 0.75rem/1.4 var(--font-sans);
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+.stdin-head::-webkit-details-marker { display: none; }
+.stdin-head::before { content: "\25B8"; font-size: 0.75rem; transition: transform 150ms var(--ease); }
+.stdin[open] > .stdin-head::before { transform: rotate(90deg); }
+.stdin-head:hover { color: var(--text); }
+.stdin-title { color: var(--text); letter-spacing: 0.02em; }
+.stdin-meta { font-family: var(--font-mono); font-weight: 400; }
+.stdin-box {
+  display: block;
+  width: calc(100% - 32px);
+  margin: 0 16px 12px;
+  padding: 8px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--text);
+  font: 13px/1.5 var(--font-mono);
+  resize: vertical;
+}
+.stdin-box:focus-visible { outline: none; border-color: var(--accent-line); box-shadow: 0 0 0 3px var(--accent-soft); }
+.harness-note code.is-read, .step-input code.is-read { color: var(--text); }
+.harness-note code.is-unread, .step-input code.is-unread { color: var(--muted); opacity: 0.7; }
+.step-input { margin: 8px 0 0; color: var(--muted); font: 400 0.75rem/1.6 var(--font-sans); }
+.step-input code { font-family: var(--font-mono); }
+
 .divider {
   position: relative;
   cursor: col-resize;
@@ -930,6 +967,12 @@ code, pre, kbd, .CodeMirror, .panel-scroll, .pipeline, .select, .editor-fallback
 .sym-fn-title { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; margin: 0 0 8px; font-size: 0.875rem; font-weight: 600; }
 .sym-fn { color: var(--syn-call); font-family: var(--font-mono); }
 .sym-fn-meta { color: var(--muted); font-size: 0.75rem; font-weight: 400; }
+.sym-types-note { margin: 0 0 14px; color: var(--muted); font-size: 0.8125rem; line-height: 1.6; }
+.type-chip { padding: 1px 7px; border-radius: 4px; background: var(--surface-2); font: 500 0.6875rem/1.5 var(--font-mono); white-space: nowrap; }
+.type-number { color: var(--syn-number); }
+.type-list { color: var(--syn-op); }
+.type-number-or-list { color: var(--warn); }
+.type-no-value, .type-unknown { color: var(--muted); }
 
 /* IR: basic blocks and the control-flow graph */
 .ir-proc + .ir-proc { margin-top: 26px; }

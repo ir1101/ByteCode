@@ -32,6 +32,10 @@ class Print(Node):
     fields = ("value",)
 
 
+class Input(Node):
+    fields = ("name",)  # input x;  reads a whole number into x
+
+
 class If(Node):
     fields = ("condition", "then_body", "else_body")  # else_body may be None
 

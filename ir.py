@@ -36,7 +36,7 @@ optimizer.optimize). Semantic analysis turns dead stores into warnings.
 from types import SimpleNamespace
 
 from ast_nodes import (ArrayLit, Assign, BinOp, Block as BlockNode, Break, Call, Continue,
-                       ExprStmt, For, FuncDef, If, Index, IndexAssign, LogicalOp, Number,
+                       ExprStmt, For, FuncDef, If, Index, IndexAssign, Input, LogicalOp, Number,
                        Print, Return, UnaryOp, Var, While)
 from compiler import BINARY_OPCODES, BUILTINS
 from vm import apply_binary
@@ -71,9 +71,17 @@ class Temp:
 
     def __init__(self, number):
         self.name = f"%t{number}"
+        self.source = None   # e.g. "g[0]" or "f(...)", for error messages about this value
 
     def __str__(self):
         return self.name[1:]
+
+
+def source_text(operand):
+    """How an operand reads in the source, as far as it is known."""
+    if isinstance(operand, Temp):
+        return operand.source or "..."
+    return str(operand)
 
 
 def _var_key(operand):
@@ -85,11 +93,11 @@ class Quad:
     """One three-address instruction."""
 
     def __init__(self, op, dst=None, args=(), target=None, symbol=None, line=None):
-        self.op = op            # copy binop unop list index setindex len append call print return goto iffalse label
+        self.op = op            # copy binop unop list index setindex len append call print input return goto iffalse label
         self.dst = dst          # Name or Temp written, if any
         self.args = list(args)  # operands read
         self.target = target    # label (goto / iffalse / label) or function name (call)
-        self.symbol = symbol    # '+', '-', 'not', ...
+        self.symbol = symbol    # '+', '-', 'not', ...; 'and' / 'or' on the if_false of a logical operator
         self.line = line
         self.origin = None      # the AST Assign whose value this quad stores, if any
 
@@ -114,6 +122,8 @@ class Quad:
             return f"{lhs}call {self.target}({', '.join(a)})"
         if self.op == "print":
             return f"print {a[0]}"
+        if self.op == "input":
+            return f"{lhs}input"
         if self.op == "return":
             return f"return {a[0]}"
         if self.op == "goto":
@@ -183,6 +193,8 @@ class Lowerer:
             self.emit("setindex", args=[target, index, self.expr(node.value)], line=node.line)
         elif isinstance(node, Print):
             self.emit("print", args=[self.expr(node.value)], line=node.line)
+        elif isinstance(node, Input):
+            self.emit("input", dst=Name(node.name), line=node.line)
         elif isinstance(node, ExprStmt):
             self.expr(node.expr)
         elif isinstance(node, BlockNode):
@@ -263,11 +275,15 @@ class Lowerer:
         if isinstance(node, Index):
             target, index = self.expr(node.target), self.expr(node.index)
             out = dst or self.new_temp()
+            if isinstance(out, Temp):
+                out.source = f"{source_text(target)}[{source_text(index)}]"
             self.emit("index", dst=out, args=[target, index], line=node.line)
             return out
         if isinstance(node, Call):
             args = [self.expr(a) for a in node.args]
             out = dst or self.new_temp()
+            if isinstance(out, Temp):
+                out.source = f"{node.name}(...)" if node.args else f"{node.name}()"
             if node.name in BUILTINS:
                 self.emit(node.name, dst=out, args=args, line=node.line)
             else:
@@ -288,15 +304,15 @@ class Lowerer:
         false_label, end = self.new_label(), self.new_label()
         left = self.expr(node.left)
         if node.op == "and":
-            self.emit("iffalse", args=[left], target=false_label, line=node.line)
+            self.emit("iffalse", args=[left], target=false_label, line=node.line, symbol=node.op)
         else:
             try_right = self.new_label()
-            self.emit("iffalse", args=[left], target=try_right, line=node.line)
+            self.emit("iffalse", args=[left], target=try_right, line=node.line, symbol=node.op)
             self.emit("copy", dst=out, args=[Const(1)], line=node.line)
             self.emit("goto", target=end, line=node.line)
             self.emit("label", target=try_right)
         right = self.expr(node.right)
-        self.emit("iffalse", args=[right], target=false_label, line=node.line)
+        self.emit("iffalse", args=[right], target=false_label, line=node.line, symbol=node.op)
         self.emit("copy", dst=out, args=[Const(1)], line=node.line)
         self.emit("goto", target=end, line=node.line)
         self.emit("label", target=false_label)

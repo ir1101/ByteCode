@@ -20,8 +20,8 @@
       <span class="brand-mark" aria-hidden="true">ML</span>
       <div class="brand-text">
         <h1>MiniLang</h1>
-        <p class="pipeline" aria-label="Pipeline: lexer, parser, semantic analysis, IR, compiler, VM">
-          <span>lexer</span><span aria-hidden="true">→</span><span>parser</span><span aria-hidden="true">→</span><span>semantic</span><span aria-hidden="true">→</span><span>IR</span><span aria-hidden="true">→</span><span>compiler</span><span aria-hidden="true">→</span><span>VM</span>
+        <p class="pipeline" aria-label="Pipeline: lexer, parser, semantic analysis, type checker, IR, compiler, VM">
+          <span>lexer</span><span aria-hidden="true">→</span><span>parser</span><span aria-hidden="true">→</span><span>semantic</span><span aria-hidden="true">→</span><span>types</span><span aria-hidden="true">→</span><span>IR</span><span aria-hidden="true">→</span><span>compiler</span><span aria-hidden="true">→</span><span>VM</span>
         </p>
       </div>
     </div>
@@ -75,6 +75,15 @@
       <div class="editor-wrap">
         <textarea id="source" spellcheck="false" autocapitalize="off" autocomplete="off" aria-label="MiniLang source code">{{ sample }}</textarea>
       </div>
+      <details class="stdin" id="stdin-panel">
+        <summary class="stdin-head">
+          <span class="stdin-title">Input</span>
+          <span class="stdin-meta" id="stdin-meta">numbers for input statements</span>
+        </summary>
+        <textarea id="stdin" class="stdin-box" rows="3" spellcheck="false" autocomplete="off"
+                  placeholder="Whole numbers for input x; to read, separated by spaces or new lines, e.g. 3 4 0"
+                  aria-label="Program input: whole numbers for input statements"></textarea>
+      </details>
     </section>
 
     <div class="divider" id="divider" role="separator" aria-orientation="vertical"
@@ -200,6 +209,7 @@
             <section class="out-section" aria-labelledby="console-title">
               <h3 class="section-label" id="console-title">Program output <span class="section-count" id="console-count"></span></h3>
               <p class="harness-note" id="harness-note" hidden></p>
+              <p class="harness-note" id="input-note" hidden></p>
               <pre class="console" id="console"></pre>
               <div id="error-slot"></div>
               <div id="warning-slot"></div>
@@ -244,6 +254,7 @@
               <div class="step-col">
                 <h4 class="col-label">Printed so far</h4>
                 <pre class="console console-small" id="step-output"></pre>
+                <p class="step-input" id="step-input" hidden></p>
               </div>
             </section>
           </div>

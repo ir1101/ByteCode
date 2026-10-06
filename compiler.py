@@ -21,6 +21,7 @@ Instruction set ([arg] where one is taken):
     LEN                   pop list, push its length                  (built-in len(a))
     APPEND                pop value, pop list, append, push new length (built-in append(a, v))
     PRINT                 pop and print
+    INPUT                 read the next whole number from the program's input and push it
     HALT                  stop execution
 
 Layout: top-level code first, then HALT, then each function body. A function
@@ -144,6 +145,10 @@ class Compiler:
     def visit_Print(self, node):
         self.visit(node.value)
         self.emit("PRINT", line=node.line)
+
+    def visit_Input(self, node):
+        self.emit("INPUT", line=node.line)
+        self.emit("STORE", node.name, node.line)
 
     def visit_ExprStmt(self, node):
         self.visit(node.expr)

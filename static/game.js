@@ -13,9 +13,9 @@
   const BY_ID = Object.fromEntries(LEVELS.map((lv) => [lv.id, lv]));
   const TRACKS = [
     { id: "challenge", name: "Challenges", blurb: "Write programs that pass hidden tests. Extra stars go to small and fast code." },
-    { id: "bug", name: "Bug hunts", blurb: "Broken programs, in pipeline order: lexer, parser, semantic analysis, VM, logic. Extra stars go to the smallest fix." },
+    { id: "bug", name: "Bug hunts", blurb: "Broken programs: lexer, parser, semantic, runtime and logic bugs, then a type error. Extra stars go to the smallest fix." },
   ];
-  const STAGE_NAMES = { lex: "lexer error", parse: "parse error", semantic: "semantic error", compile: "compile error", runtime: "runtime error", logic: "wrong output" };
+  const STAGE_NAMES = { lex: "lexer error", parse: "parse error", semantic: "semantic error", type: "type error", compile: "compile error", runtime: "runtime error", logic: "wrong output" };
 
   const fmt = (n) => Number(n).toLocaleString();
   const CHECK_KEYS = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent) ? "⌘ ⇧ ↵" : "Ctrl ⇧ ↵";
@@ -337,6 +337,10 @@
       facts.push(el("li", null, "Ready-made variables: ",
         lv.inputs.map((name, i) => [i ? ", " : "", el("code", null, name)]),
         ". They're set before your first line runs."));
+    }
+    if (lv.stdin) {
+      facts.push(el("li", null, "Each test gives your input statements different numbers to read, like ",
+        el("code", null, lv.stdin), "."));
     }
     if (lv.epilogue) {
       facts.push(el("li", null, "After your code, each test runs a line like ", el("code", null, lv.epilogue), "."));

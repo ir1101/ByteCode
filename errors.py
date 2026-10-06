@@ -39,6 +39,10 @@ class SemanticError(MiniLangError):
     stage = "SemanticError"
 
 
+class TypeCheckError(MiniLangError):
+    stage = "TypeError"
+
+
 class CompileError(MiniLangError):
     stage = "CompileError"
 

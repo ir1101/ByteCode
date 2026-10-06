@@ -1,6 +1,8 @@
-"""MiniLang driver: source -> lexer -> parser -> semantic analysis -> IR + optimizer -> compiler -> VM."""
+"""MiniLang driver: source -> lexer -> parser -> semantic analysis -> type checking -> IR + optimizer
+-> compiler -> VM."""
 
 import argparse
+import io
 import sys
 
 from ast_nodes import dump
@@ -11,7 +13,8 @@ from lexer import tokenize
 from optimizer import optimize
 from parser import parse
 from semantic import analyze, format_symbols
-from vm import VM, text_tracer
+from typecheck import check_types
+from vm import VM, InputReader, text_tracer
 
 
 def section(title):
@@ -26,7 +29,9 @@ def main(argv=None):
     ap.add_argument("--trace", action="store_true",
                     help="print every executed instruction and the stack after it")
     ap.add_argument("--no-opt", action="store_true",
-                    help="disable the optimizer (constant propagation, folding and peephole)")
+                    help="disable the optimizer (constant propagation, folding, dead stores, peephole)")
+    ap.add_argument("--input", metavar="VALUES",
+                    help='values for input statements, e.g. --input "3 4" (default: read them from stdin)')
     args = ap.parse_args(argv)
 
     try:
@@ -57,6 +62,11 @@ def main(argv=None):
             print(f"warning (line {w['line']}): {w['message']}", file=sys.stderr)
         sys.stderr.flush()
 
+        types = check_types(tree)
+        if args.debug:
+            section("TYPES")
+            print(types.format())
+
         if args.debug:
             ir = build_ir(tree)
             stats = ir.stats()
@@ -75,12 +85,24 @@ def main(argv=None):
             print(disassemble(code))
             section("TRACE + OUTPUT" if args.trace else "OUTPUT")
 
-        VM(code, on_step=text_tracer(sys.stdout) if args.trace else None).run()
+        VM(code, on_step=text_tracer(sys.stdout) if args.trace else None, input=input_reader(args.input)).run()
     except MiniLangError as e:
         for err in e.errors:   # the lexer, parser and semantic analysis report every error they find
             print(err, file=sys.stderr)
         return 1
     return 0
+
+
+def input_reader(values):
+    """Where `input x;` reads from: --input, or stdin (with a prompt when it's a terminal)."""
+    if values is not None:
+        return InputReader(io.StringIO(values))
+    prompt = None
+    if sys.stdin.isatty():
+        def prompt():
+            sys.stdout.flush()
+            print("input> ", end="", file=sys.stderr, flush=True)
+    return InputReader(sys.stdin, prompt)
 
 
 if __name__ == "__main__":

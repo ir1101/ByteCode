@@ -1,5 +1,7 @@
 """Stack-based virtual machine that executes MiniLang bytecode."""
 
+import io
+import re
 import sys
 
 from errors import VMError
@@ -44,6 +46,42 @@ def apply_binary(op, a, b, line=None):
     return int({"LT": a < b, "GT": a > b, "LE": a <= b, "GE": a >= b}[op])
 
 
+WHOLE_NUMBER = re.compile(r"[+-]?[0-9]+")
+
+
+class InputReader:
+    """The values `input x;` reads: whole numbers separated by spaces or new lines.
+
+    Lines are read from the stream only when the program asks, so a terminal
+    session can type them in as the program runs. `prompt`, if given, is called
+    before waiting for a new line.
+    """
+
+    def __init__(self, stream=None, prompt=None):
+        self.stream = stream if stream is not None else io.StringIO("")
+        self.prompt = prompt
+        self.pending = []
+        self.used = 0   # how many values the program has read so far
+
+    @classmethod
+    def from_text(cls, text):
+        return cls(io.StringIO(text))
+
+    def read(self, line):
+        while not self.pending:
+            if self.prompt is not None:
+                self.prompt()
+            text = self.stream.readline()
+            if not text:
+                raise VMError("the program asked for input, but there is none left", line)
+            self.pending = text.split()
+        token = self.pending.pop(0)
+        if not WHOLE_NUMBER.fullmatch(token):
+            raise VMError(f"input {token!r} is not a whole number", line)
+        self.used += 1
+        return int(token)
+
+
 class Frame:
     """One active function call: its own local variables and where to return to."""
 
@@ -57,7 +95,7 @@ class Frame:
 
 class VM:
     def __init__(self, code, out=None, max_steps=10_000_000, max_output_lines=None,
-                 max_call_depth=1000, on_step=None):
+                 max_call_depth=1000, on_step=None, input=None):
         self.code = code
         self.stack = []      # operand stack, shared by all calls
         self.variables = {}  # globals
@@ -68,6 +106,7 @@ class VM:
         self.max_output_lines = max_output_lines  # guard against runaway printing
         self.max_call_depth = max_call_depth  # guard against runaway recursion
         self.lines_printed = 0
+        self.input = input if input is not None else InputReader()  # what `input x;` reads
         # Called as on_step(addr, instruction, vm) after each instruction runs.
         self.on_step = on_step
 
@@ -186,6 +225,8 @@ class VM:
                     raise VMError(f"output limit of {self.max_output_lines} lines exceeded", ins.line)
                 print(self.pop(ins), file=self.out)
                 self.lines_printed += 1
+            elif op == "INPUT":
+                self.stack.append(self.input.read(ins.line))
             elif op == "HALT":
                 self.pc = len(self.code)
             else:

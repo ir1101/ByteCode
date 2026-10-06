@@ -5,12 +5,13 @@ Grammar (lowest to highest precedence for expressions):
     program     := (funcdef | statement)* EOF
     funcdef     := "func" IDENT "(" params? ")" block      (top level only)
     params      := IDENT ("," IDENT)*
-    statement   := assign | print | if | while | for | block
+    statement   := assign | print | input | if | while | for | block
                  | call ";" | "return" expr? ";" | "break" ";" | "continue" ";"
     assign      := assignment ";"
     assignment  := IDENT ("[" expr "]")* ("=" | "+=" | "-=" | "*=" | "/=" | "%=") expr
                    (a = 1;  a[i] = 1;  a[i][j] = 1;  and x += e is short for x = x + e)
     print       := "print" expr ";"
+    input       := "input" IDENT ";"                      (reads a whole number into the variable)
     if          := "if" expr block ("else" (if | block))?
     while       := "while" expr block
     for         := "for" assignment? ";" expr? ";" assignment? block
@@ -42,14 +43,14 @@ import copy
 import difflib
 
 from ast_nodes import (ArrayLit, Assign, BinOp, Block, Break, Call, Continue,
-                       ExprStmt, For, FuncDef, If, Index, IndexAssign, LogicalOp,
+                       ExprStmt, For, FuncDef, If, Index, IndexAssign, Input, LogicalOp,
                        Number, Print, Program, Return, UnaryOp, Var, While)
 from errors import ParseError, raise_all
 from lexer import EOF, IDENT, INT, KEYWORD, OP
 
 COMPARISON_OPS = {"==", "!=", "<", ">", "<=", ">="}
 COMPOUND_OPS = {"+=": "+", "-=": "-", "*=": "*", "/=": "/", "%=": "%"}
-STATEMENT_KEYWORDS = {"if", "else", "while", "for", "print", "return", "break", "continue", "func"}
+STATEMENT_KEYWORDS = {"if", "else", "while", "for", "print", "input", "return", "break", "continue", "func"}
 MAX_ERRORS = 20
 
 # Words from other languages, and what MiniLang does instead.
@@ -173,6 +174,8 @@ class Parser:
     def statement(self):
         if self.check(KEYWORD, "print"):
             return self.print_stmt()
+        if self.check(KEYWORD, "input"):
+            return self.input_stmt()
         if self.check(KEYWORD, "if"):
             return self.if_stmt()
         if self.check(KEYWORD, "while"):
@@ -270,6 +273,12 @@ class Parser:
         value = self.expr()
         self.expect(OP, ";", "';' after print")
         return Print(value, line=kw.line)
+
+    def input_stmt(self):
+        kw = self.expect(KEYWORD, "input")
+        name = self.expect(IDENT, what="a variable name after 'input'")
+        self.expect(OP, ";", "';' after input")
+        return Input(name.value, line=kw.line)
 
     def if_stmt(self):
         kw = self.expect(KEYWORD, "if")
