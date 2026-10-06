@@ -1,0 +1,66 @@
+{% extends "guide/lesson.html" %}
+{% import "guide/_macros.html" as g %}
+
+{% block lesson %}
+<p>A <code>while</code> loop repeats its block for as long as its condition stays true. MiniLang checks the condition before every pass, and stops as soon as it is false.</p>
+
+{% call g.example() %}
+i = 1;
+while i <= 5 {
+    print i;
+    i += 1;
+}
+{% endcall %}
+
+<p>Trace it by hand once: <code>i</code> starts at 1, the condition <code>1 &lt;= 5</code> is true, so it prints 1 and <code>i</code> becomes 2. This repeats until <code>i</code> is 6. Then <code>6 &lt;= 5</code> is false and the loop ends. If the condition is false from the start, the block never runs at all.</p>
+
+<h2>Keeping a running total</h2>
+<p>A loop often builds up an answer in a variable, like adding up the numbers from 1 to 100:</p>
+
+{% call g.example() %}
+total = 0;
+n = 1;
+while n <= 100 {
+    total += n;
+    n += 1;
+}
+print total;
+{% endcall %}
+
+<p>Two variables do two jobs: <code>n</code> counts, and <code>total</code> collects. Set both up <em>before</em> the loop.</p>
+
+<h2>Loops that never end</h2>
+<p>If nothing in the block ever makes the condition false, the loop runs forever. Here, the line that should move <code>i</code> on is missing. MiniLang lets a program take a large but limited number of steps, then stops it with an error, so a mistake like this can't hang your computer:</p>
+
+{% call g.example(expect="runtime") %}
+i = 1;
+total = 0;
+while i <= 5 {
+    total += i;
+}
+print total;
+{% endcall %}
+
+<p>Add <code>i += 1;</code> inside the loop to fix it.</p>
+
+<h2>Off by one</h2>
+<p>A loop that runs one time too many or too few is called an <em>off-by-one</em> error, and it's very common. When you write a loop, check the first and last pass: does <code>&lt;</code> or <code>&lt;=</code> give the right last value?</p>
+
+{% call g.remember() %}
+<li><code>while condition { … }</code> repeats while the condition is true, checking before each pass.</li>
+<li>Something inside the loop must eventually make the condition false.</li>
+<li>Set up counters and totals before the loop starts.</li>
+{% endcall %}
+
+{% call g.exercise("Powers of two") %}
+<p>Print the powers of two that are below 1000: 1, 2, 4, 8, …, 512.</p>
+{% call g.hint() %}<p>Start with <code>p = 1</code>, and double it each time round with <code>p *= 2;</code>. Loop while <code>p &lt; 1000</code>.</p>{% endcall %}
+{% call g.solution() %}
+p = 1;
+while p < 1000 {
+    print p;
+    p *= 2;
+}
+{% endcall %}
+{% endcall %}
+{% endblock %}

@@ -1,0 +1,121 @@
+{% extends "guide/lesson.html" %}
+{% import "guide/_macros.html" as g %}
+
+{% block lesson %}
+<p>A <em>list</em> keeps many values in one variable. Write the items between square brackets, separated by commas. <code>print</code> shows the whole list.</p>
+
+{% call g.example() %}
+primes = [2, 3, 5, 7, 11];
+print primes;
+print primes[0];
+print primes[4];
+print len(primes);
+{% endcall %}
+
+<h2>Indexes start at 0</h2>
+<p><code>primes[0]</code> is the <em>first</em> item, so the last one is at <code>len(primes) - 1</code>, here 4. Asking for an index that doesn't exist is a runtime error:</p>
+
+{% call g.example(expect="runtime") %}
+xs = [10, 20, 30];
+print xs[2];
+print xs[3];
+{% endcall %}
+
+<h2>Changing and growing a list</h2>
+<ul>
+  <li><code>xs[i] = value;</code> replaces one item.</li>
+  <li><code>append(xs, value);</code> adds an item to the end.</li>
+  <li><code>len(xs)</code> is how many items there are. <code>[]</code> is an empty list.</li>
+</ul>
+
+{% call g.example() %}
+squares = [];
+for i = 1; i <= 5; i += 1 {
+    append(squares, i * i);
+}
+squares[0] = 100;
+print squares;
+print len(squares);
+{% endcall %}
+
+<h2>Walking through a list</h2>
+<p>Loop over the indexes from 0 up to, but not including, <code>len(xs)</code>:</p>
+
+{% call g.example() %}
+xs = [4, 8, 15, 16, 23, 42];
+total = 0;
+biggest = xs[0];
+for i = 0; i < len(xs); i += 1 {
+    total += xs[i];
+    if xs[i] > biggest {
+        biggest = xs[i];
+    }
+}
+print total;
+print biggest;
+{% endcall %}
+
+<h2>Lists inside lists</h2>
+<p>An item can itself be a list, which gives you a grid. <code>grid[1]</code> is the second row, and <code>grid[1][2]</code> is the third item in it.</p>
+
+{% call g.example() %}
+grid = [[1, 2, 3], [4, 5, 6]];
+print grid[1];
+print grid[1][2];
+grid[0][0] = 9;
+print grid;
+{% endcall %}
+
+<h2>Lists are shared, not copied</h2>
+<p>Assigning a list to another variable doesn't copy it: both names refer to the <em>same</em> list. The same goes for passing a list to a function, which is how a function can change a list it is given.</p>
+
+{% call g.example() %}
+a = [1, 2, 3];
+b = a;
+b[0] = 99;
+print a;
+
+func clear_first(xs) {
+    xs[0] = 0;
+}
+clear_first(a);
+print b;
+{% endcall %}
+
+<h2>Lists and numbers don't mix</h2>
+<p>Arithmetic needs numbers, so <code>xs + 1</code> makes no sense. MiniLang's type checker works out which variables hold lists, and it rejects a mix-up like this before the program even starts:</p>
+
+{% call g.example(expect="type") %}
+xs = [1, 2, 3];
+print xs * 2;
+{% endcall %}
+
+<p><code>==</code> and <code>!=</code> are the exception: they compare two lists item by item.</p>
+
+{% call g.remember() %}
+<li><code>[a, b, c]</code> makes a list; <code>xs[i]</code> reads item <code>i</code>, counting from 0.</li>
+<li><code>len(xs)</code> counts the items; <code>append(xs, v)</code> adds one to the end.</li>
+<li>Loop with <code>for i = 0; i &lt; len(xs); i += 1</code>.</li>
+<li>Two names can share one list: changing it through one changes it for both.</li>
+{% endcall %}
+
+{% call g.exercise("Count the evens") %}
+<p>Print how many numbers in <code>xs</code> are even. For the list below the answer is 4.</p>
+{% call g.example(title="Your turn") %}
+xs = [3, 8, 12, 7, 6, 10, 1];
+evens = 0;
+print evens;
+{% endcall %}
+{% call g.hint() %}<p>Walk through the list, and add one to <code>evens</code> whenever <code>xs[i] % 2 == 0</code>.</p>{% endcall %}
+{% call g.solution() %}
+xs = [3, 8, 12, 7, 6, 10, 1];
+evens = 0;
+for i = 0; i < len(xs); i += 1 {
+    if xs[i] % 2 == 0 {
+        evens += 1;
+    }
+}
+print evens;
+{% endcall %}
+{% endcall %}
+{% endblock %}

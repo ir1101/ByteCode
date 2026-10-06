@@ -1,0 +1,109 @@
+{% extends "guide/lesson.html" %}
+{% import "guide/_macros.html" as g %}
+
+{% block lesson %}
+<p>A <em>function</em> gives a name to a piece of work so you can use it again and again. You define it once with <code>func</code>, listing its <em>parameters</em>: the values it needs. <code>return</code> sends the answer back.</p>
+
+{% call g.example() %}
+func square(x) {
+    return x * x;
+}
+
+print square(4);
+print square(9) - 1;
+print square(square(2));
+{% endcall %}
+
+<p>When you <em>call</em> <code>square(4)</code>, the parameter <code>x</code> becomes 4 and the function's block runs. <code>return</code> ends the call, and the call is replaced by the returned value.</p>
+
+<h2>More than one parameter</h2>
+{% call g.example() %}
+func area(width, height) {
+    return width * height;
+}
+
+func perimeter(width, height) {
+    return 2 * (width + height);
+}
+
+print area(6, 7);
+print perimeter(6, 7);
+{% endcall %}
+
+<ul>
+  <li>Functions are defined at the top level of the program, never inside another block.</li>
+  <li>You can call a function before its definition appears in the file.</li>
+  <li>A call needs exactly as many values as the function has parameters.</li>
+  <li>A function that ends without <code>return</code>, or with a bare <code>return;</code>, gives back 0.</li>
+  <li>A call can be a statement on its own, like <code>show(5);</code>. Its result is then thrown away.</li>
+</ul>
+
+<h2>Functions that call themselves</h2>
+<p>A function can call itself; this is called <em>recursion</em>. It needs a <em>base case</em> that answers without calling again, or it would never stop. The factorial n! = 1 × 2 × … × n is the classic example:</p>
+
+{% call g.example() %}
+func fact(n) {
+    if n <= 1 {
+        return 1;
+    }
+    return n * fact(n - 1);
+}
+
+print fact(5);
+print fact(20);
+{% endcall %}
+
+<p><code>fact(5)</code> is <code>5 * fact(4)</code>, which is <code>4 * fact(3)</code>, and so on down to <code>fact(1)</code>, which is just 1. Open it in the playground and step through it to watch the calls stack up and unwind.</p>
+
+<h2>Local and global variables</h2>
+<p>Parameters, and any variable a function assigns, belong to that one call. They are <em>local</em>, so they can't clash with names outside. A function can <em>read</em> a variable from the main program (a <em>global</em>), but assigning to that name inside the function creates a new local instead. This catches many people out:</p>
+
+{% call g.example() %}
+count = 0;
+
+func bump() {
+    count = count + 1;
+    return count;
+}
+
+print bump();
+print count;
+{% endcall %}
+
+<p><code>bump()</code> returned 1, but the global <code>count</code> is still 0. MiniLang warns about this "scope trap". To change something in the main program, pass the value in, return the new one, and assign it there:</p>
+
+{% call g.example(title="The fix") %}
+count = 0;
+
+func bump(c) {
+    return c + 1;
+}
+
+count = bump(count);
+count = bump(count);
+print count;
+{% endcall %}
+
+{% call g.remember() %}
+<li><code>func name(a, b) { … return value; }</code> defines a function; <code>name(1, 2)</code> calls it.</li>
+<li>Without <code>return</code>, a function gives back 0.</li>
+<li>Recursion needs a base case.</li>
+<li>Assigning inside a function makes a local; return values to change the main program.</li>
+{% endcall %}
+
+{% call g.exercise("The bigger of two") %}
+<p>Write a function <code>bigger(a, b)</code> that returns the larger of its two parameters. Then print <code>bigger(3, 9)</code> and <code>bigger(-2, -7)</code>; the output should be 9, then -2.</p>
+{% call g.hint() %}<p>Inside the function, an <code>if</code> decides which one to <code>return</code>.</p>{% endcall %}
+{% call g.solution() %}
+func bigger(a, b) {
+    if a > b {
+        return a;
+    }
+    return b;
+}
+
+print bigger(3, 9);
+print bigger(-2, -7);
+{% endcall %}
+{% endcall %}
+{% endblock %}

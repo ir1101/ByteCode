@@ -1,0 +1,96 @@
+{% extends "chapters/chapter.html" %}
+{% import "guide/_macros.html" as g %}
+
+{% block chapter %}
+<p>Everything so far has analysed the program. <em>Code generation</em> finally produces something to run: a flat list of numbered instructions, called <em>bytecode</em>, for MiniLang's stack machine (next chapter). The compiler walks the syntax tree once and emits instructions as it goes. Every instruction carries the source line it came from, so runtime errors can still name a line.</p>
+
+<p>The bytecode in this chapter is shown with the optimizer <em>off</em>: exactly what the compiler emits, one construct at a time.</p>
+
+{{ g.h2("Stack code from a tree") }}
+<p>The stack machine keeps intermediate values on an <em>operand stack</em>. <code>PUSH 3</code> puts 3 on top; <code>ADD</code> pops the top two values and pushes their sum. So to compile an operator node, compile its left operand, then its right, then emit the operator: by then both values are waiting on the stack. Visiting the children before the node itself is a <em>post-order</em> walk, and it is the whole trick:</p>
+
+{{ g.source("compiler.py", "Compiler.visit_BinOp") }}
+
+{% call g.stage("bytecode") %}
+print (1 + 2) * (7 - 4);
+{% endcall %}
+
+<p>Read the bytecode as a stack: after <code>PUSH 1</code> and <code>PUSH 2</code>, <code>ADD</code> leaves 3; then <code>PUSH 7</code>, <code>PUSH 4</code> and <code>SUB</code> leave 3 on top of it; <code>MUL</code> combines them into 9 for <code>PRINT</code>. The brackets have vanished: the order of instructions encodes them. This is <em>reverse Polish notation</em>. Each node kind has its own <code>visit_…</code> method, picked by the node's class name:</p>
+
+{{ g.source("compiler.py", "Compiler.visit") }}
+
+<p>Variables use <code>LOAD name</code> and <code>STORE name</code>, which move a value between a variable and the stack. A statement always leaves the stack as it found it: <code>x = 5;</code> pushes 5 and then <code>STORE</code> pops it.</p>
+
+{{ g.h2("Jumps and back-patching") }}
+<p>Control flow becomes jumps. <code>JUMP addr</code> continues at <code>addr</code>; <code>JUMP_IF_FALSE addr</code> pops a value and jumps only if it is 0. An <code>if</code> compiles to: the condition, a conditional jump over the <em>then</em> part, the <em>then</em> part, and (with an <code>else</code>) a jump over the <em>else</em> part.</p>
+
+<p>The difficulty is that a forward jump is emitted <em>before</em> its target exists: when the compiler writes the jump over the <em>then</em> part, it doesn't yet know how long that part will be. So it emits the jump with no target, remembers its address, and fills the target in later, once it knows. This is <em>back-patching</em>:</p>
+
+{{ g.source("compiler.py", "Compiler.emit") }}
+{{ g.source("compiler.py", "Compiler.patch") }}
+{{ g.source("compiler.py", "Compiler.visit_If") }}
+
+{% call g.stage("bytecode") %}
+x = 3;
+if x > 5 {
+    print 1;
+} else {
+    print 2;
+}
+print 0;
+{% endcall %}
+
+<p>A <code>while</code> loop needs one forward jump (out of the loop, patched at the end) and one backward jump (to the condition, whose address is already known):</p>
+
+{{ g.source("compiler.py", "Compiler.visit_While") }}
+
+<p><code>break</code> and <code>continue</code> are jumps too, but their targets aren't known when they're compiled either. The compiler keeps a stack of open loops; each <code>break</code> adds its jump to the innermost loop's list, and <code>finish_loop</code> patches them all once the loop is complete.</p>
+
+{{ g.h2("Short-circuit and/or") }}
+<p><code>a and b</code> must not evaluate <code>b</code> when <code>a</code> is false. So it can't simply compile to "push a, push b, AND": there's no <code>AND</code> instruction at all. Instead, <code>and</code> and <code>or</code> compile into jumps that skip the right side when the left side already decides the answer. The result is always normalised to 1 or 0:</p>
+
+{{ g.source("compiler.py", "Compiler.visit_LogicalOp", start='if node.op == "and":', end="self.patch(to_end, self.here())") }}
+
+{% call g.stage("bytecode") %}
+d = 0;
+print d != 0 and 10 / d > 1;
+{% endcall %}
+
+<p>If <code>d != 0</code> is false, <code>JUMP_IF_FALSE</code> leaps straight past the division to <code>PUSH 0</code>, so <code>DIV</code> never runs and there's no division by zero.</p>
+
+{{ g.h2("Functions") }}
+<p>The bytecode has a fixed layout: the top-level code first, then <code>HALT</code>, then each function body. Like semantic analysis, the compiler first collects every function, so a call can come before the definition. A call's target isn't known until the function body has been placed, so calls are back-patched at the very end:</p>
+
+{{ g.source("compiler.py", "Compiler.compile") }}
+
+<p>To call a function, the caller pushes the arguments left to right, then emits <code>CALL addr</code>. The function starts by <code>STORE</code>-ing its parameters, last one first, because the last argument is on top of the stack. <code>return e</code> pushes <code>e</code> and emits <code>RET</code>, and every body ends with an implicit <code>PUSH 0; RET</code>, which is why falling off the end returns 0:</p>
+
+{{ g.source("compiler.py", "Compiler.compile_function") }}
+
+{% call g.stage("bytecode") %}
+func area(w, h) {
+    return w * h;
+}
+print area(6, 7);
+{% endcall %}
+
+<p>The first instruction of each function carries a label (<code>area(w, h):</code> above), which the disassembler prints and the VM uses to name the call in its frames.</p>
+
+{% call g.remember() %}
+<li>Expressions compile post-order: operands first, then the operator, using the operand stack.</li>
+<li>Control flow is jumps; a forward jump is emitted first and back-patched once its target is known.</li>
+<li><code>and</code> / <code>or</code> compile to jumps, which is what makes them short-circuit.</li>
+<li>Layout: top-level code, <code>HALT</code>, then function bodies; calls are patched at the end.</li>
+<li>Arguments go in left to right, and are stored in reverse.</li>
+{% endcall %}
+
+{% call g.exercise("Hand-compile it") %}
+<p>Write the bytecode for <code>print 10 - 2 * 3;</code> by hand, then check it. How many instructions, counting <code>HALT</code>?</p>
+{% call g.answer() %}
+<p>Seven: <code>PUSH 10</code>, <code>PUSH 2</code>, <code>PUSH 3</code>, <code>MUL</code>, <code>SUB</code>, <code>PRINT</code>, <code>HALT</code>. The multiplication is a subtree of the subtraction, so it's computed first, while 10 waits underneath on the stack. Then <code>SUB</code> pops 6 and 10, in that order, and pushes 10 − 6.</p>
+{% endcall %}
+{% call g.stage("bytecode", title="Check") %}
+print 10 - 2 * 3;
+{% endcall %}
+{% endcall %}
+{% endblock %}

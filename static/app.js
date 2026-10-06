@@ -1373,7 +1373,18 @@
   // open that example, run it, and show that stage.
   const params = new URLSearchParams(location.search);
   const linked = examples.find((ex) => ex.name === params.get("example"));
-  if (linked) {
+  if (params.has("code")) {
+    loadSource(params.get("code"), "lesson.ml");
+    if (params.has("stdin")) {
+      stdinBox.value = params.get("stdin");
+      updateStdinMeta();
+      stdinPanel.open = true;
+    }
+    noticeInput();
+    const tab = params.get("tab");
+    if (TABS.includes(tab) && tab !== "level") selectTab(tab);
+    run();
+  } else if (linked) {
     if (linked.name !== select.value) {
       select.value = linked.name;
       select.dispatchEvent(new Event("change"));

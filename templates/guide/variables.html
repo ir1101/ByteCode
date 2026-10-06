@@ -1,0 +1,84 @@
+{% extends "guide/lesson.html" %}
+{% import "guide/_macros.html" as g %}
+
+{% block lesson %}
+<p>A <em>variable</em> is a name for a value. You create one by assigning to it with <code>=</code>; there's nothing to declare first. After that, using the name means "the value it holds right now".</p>
+
+{% call g.example() %}
+width = 6;
+height = 7;
+area = width * height;
+print area;
+print area + 1;
+{% endcall %}
+
+<p>Read <code>=</code> as "becomes", not "equals": <code>area = width * height;</code> works out <code>6 * 7</code> and stores 42 in <code>area</code>.</p>
+
+<h2>Changing a variable</h2>
+<p>Assigning again replaces the old value. The right-hand side is worked out first, so a variable can use its own current value to make its next one.</p>
+
+{% call g.example() %}
+score = 10;
+print score;
+score = score + 5;
+print score;
+score = score * 2;
+print score;
+{% endcall %}
+
+<p>Changing a variable "by" something is so common that there are shortcuts: <code>x += 5;</code> means <code>x = x + 5;</code>, and likewise <code>-=</code>, <code>*=</code>, <code>/=</code> and <code>%=</code>.</p>
+
+{% call g.example() %}
+lives = 3;
+lives -= 1;
+print lives;
+coins = 7;
+coins *= 10;
+coins += 5;
+print coins;
+{% endcall %}
+
+<h2>Names</h2>
+<ul>
+  <li>Names use letters, digits and <code>_</code>, and can't start with a digit: <code>total</code>, <code>max_score</code> and <code>p2</code> are fine.</li>
+  <li>Upper and lower case are different: <code>total</code> and <code>Total</code> are two separate variables.</li>
+  <li>Keywords such as <code>print</code>, <code>if</code> and <code>while</code> can't be used as names.</li>
+  <li>Pick names that say what the value means. <code>slices_each</code> beats <code>s</code>.</li>
+</ul>
+
+<h2>Using a name that doesn't exist</h2>
+<p>If you read a variable that is never assigned anywhere, MiniLang refuses to run the program. When the name looks like a typo, it suggests the one you probably meant:</p>
+
+{% call g.example(expect="semantic") %}
+count = 3;
+print cout;
+{% endcall %}
+
+{% call g.remember() %}
+<li><code>name = value;</code> creates or changes a variable.</li>
+<li>The right side is worked out first: <code>n = n + 1;</code> adds one to <code>n</code>.</li>
+<li><code>+= -= *= /= %=</code> are shortcuts for changing a variable.</li>
+<li>Names are case-sensitive, and using one that never gets a value is an error.</li>
+{% endcall %}
+
+{% call g.exercise("Swap two values") %}
+<p>Make <code>a</code> hold 2 and <code>b</code> hold 1 by swapping their values, without typing the numbers again. The prints should then show 2, then 1.</p>
+{% call g.example(title="Your turn") %}
+a = 1;
+b = 2;
+# swap them here
+print a;
+print b;
+{% endcall %}
+{% call g.hint() %}<p>Writing <code>a = b;</code> first loses the old value of <code>a</code>. Save it in a third variable before you overwrite it.</p>{% endcall %}
+{% call g.solution() %}
+a = 1;
+b = 2;
+old_a = a;
+a = b;
+b = old_a;
+print a;
+print b;
+{% endcall %}
+{% endcall %}
+{% endblock %}

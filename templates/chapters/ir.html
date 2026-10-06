@@ -1,0 +1,144 @@
+{% extends "chapters/chapter.html" %}
+{% import "guide/_macros.html" as g %}
+
+{% block chapter %}
+<p>A syntax tree is great for checking a program, but awkward for reasoning about how values flow through it. So the compiler also lowers the tree to an <em>intermediate representation</em> (IR): a list of very simple instructions, cut into <em>basic blocks</em> and joined into a <em>control-flow graph</em>. Over that graph it runs <em>data-flow analyses</em>, which answer questions like "is <code>x</code> always 10 here?" and "will anyone ever read this value?".</p>
+
+{{ g.h2("Three-address code") }}
+<p>MiniLang's IR is <em>three-address code</em> (TAC): every instruction does at most one operation, on at most two operands, and stores the result. An expression like <code>2 * (3 + y)</code> becomes a sequence of steps, with the intermediate results in compiler-made <em>temporaries</em> <code>t1</code>, <code>t2</code>, …:</p>
+
+{% call g.stage("ir") %}
+y = 4;
+x = 2 * (3 + y);
+print x;
+{% endcall %}
+
+<p>Each instruction is a <code>Quad</code>: an operation, a destination, its operands, and a jump target for jumps. Lowering an expression is a short recursive function: lower the operands first, then emit one instruction that combines them into a new temporary:</p>
+
+{{ g.source("ir.py", "Lowerer.expr", start="if isinstance(node, BinOp):", end="return out") }}
+
+<p>Control flow becomes labels and two kinds of jump: <code>goto L</code>, and <code>if_false t goto L</code>. Here is how a <code>while</code> loop is lowered:</p>
+
+{{ g.source("ir.py", "Lowerer.stmt", start="elif isinstance(node, While):", end='self.emit("label", target=end)') }}
+
+<p>Temporaries print as <code>t1</code> but are stored under the key <code>%t1</code> internally. <code>%</code> can't appear in a MiniLang name, so a variable the programmer happens to call <code>t1</code> can never be confused with a temporary.</p>
+
+{{ g.h2("Basic blocks") }}
+<p>A <em>basic block</em> is a run of instructions that always execute together: control enters only at the top and leaves only at the bottom. Within a block there are no branches, which makes it the natural unit for analysis. Blocks are found by marking the <em>leaders</em>, the instructions that start one:</p>
+<ul>
+  <li>the very first instruction,</li>
+  <li>every label (something may jump there),</li>
+  <li>every instruction straight after a jump or a <code>return</code>.</li>
+</ul>
+
+{{ g.source("ir.py", "build_cfg", start="for quad in proc.quads:", end="current.quads.append(quad)") }}
+
+{% call g.stage("ir") %}
+input n;
+if n % 2 == 0 {
+    print 0;
+} else {
+    print 1;
+}
+print n;
+{% endcall %}
+
+<p>The <code>if</code> becomes four blocks: B0 reads <code>n</code> and tests the condition, B1 and B2 are the two branches, and B3 is where they join. (<code>n</code> comes from <code>input</code> so that nothing here is a known constant; with <code>n = 7</code>, constant propagation would prove the first branch can never run.)</p>
+
+{{ g.h2("The control-flow graph") }}
+<p>Joining every block to the blocks that can run straight after it gives the <em>control-flow graph</em> (CFG). A block ending in <code>goto</code> has one successor. A block ending in <code>if_false</code> has two: the next block, and the jump target. A block ending in <code>return</code> has none. Anything else falls through to the next block.</p>
+
+<p>A loop shows up as a <em>back edge</em>: an edge to a block that comes earlier. In the playground's IR tab these are the dashed arrows on the left.</p>
+
+{% call g.stage("ir") %}
+i = 0;
+total = 0;
+while i < 4 {
+    total += i;
+    i += 1;
+}
+print total;
+{% endcall %}
+
+<p>B2, the loop body, ends with <code>goto L1</code> back to B1, the condition. That edge is why analyses over a CFG have to <em>iterate</em>: what B1 knows depends on B2, which depends on B1.</p>
+
+{{ g.h2("Constant propagation") }}
+<p>The first analysis asks: which variables hold a <em>known constant</em> at the start of each block? It's a forward analysis using <em>Kildall's algorithm</em>. Start from "nothing known" at the entry; push facts through each block's instructions; where paths join, keep a fact only if <strong>every</strong> incoming path agrees on the same value:</p>
+
+{{ g.source("ir.py", "meet") }}
+{{ g.source("ir.py", "propagate") }}
+
+<p>The loop runs until nothing changes. That always happens, because facts can only ever be removed, never added. It also skips branches it can prove are never taken (<code>live_successors</code>), so a dead branch doesn't spoil the facts at the join. Below, the optimized view shows the TAC with every proven constant substituted and folded:</p>
+
+{% call g.stage("constants") %}
+x = 10;
+y = x * 2;
+if y > 5 {
+    z = y + 1;
+} else {
+    z = 0;
+}
+print z;
+{% endcall %}
+
+<p>Constants flow all the way through: <code>y</code> is 20, so <code>y &gt; 5</code> is true, the <code>else</code> branch can never run, and <code>z</code> is 21 at the join. Notice that some assignments are now marked as dead stores. That's the next analysis.</p>
+
+{{ g.h2("Liveness") }}
+<p>A variable is <em>live</em> at a point if its current value may still be read later, on some path. Liveness flows <strong>backwards</strong>: whether <code>x</code> is live depends on what comes <em>after</em>. For each block:</p>
+<pre class="diagram"><b>live_out</b>(B) = union of live_in(S) over every successor S
+<b>live_in</b>(B)  = use(B) ∪ (live_out(B) − def(B))</pre>
+
+<p>Inside a block, the analysis walks backwards from <code>live_out</code>: each instruction first kills the variable it writes, then adds the variables it reads. So <code>i = i + 1</code> still keeps <code>i</code> live before it:</p>
+
+{{ g.source("ir.py", "live_after_each") }}
+{{ g.source("ir.py", "liveness") }}
+
+<p>A store to a variable that isn't live right after it is a <em>dead store</em>: its value is overwritten, or the program ends, before anyone reads it. The IR view lists each block's live variables and tags dead stores:</p>
+
+{% call g.stage("ir") %}
+result = 0;
+result = 6 * 7;
+count = 3;
+while count > 0 {
+    count -= 1;
+}
+print result;
+{% endcall %}
+
+<p>The first <code>result = 0</code> is dead: line 2 overwrites it before anything reads it. That's what semantic analysis turns into a warning, and what the optimizer deletes. These analyses complete a classic set:</p>
+
+<table class="table">
+  <thead><tr><th scope="col">Analysis</th><th scope="col">Direction</th><th scope="col">At a join</th><th scope="col">Question</th></tr></thead>
+  <tbody>
+    <tr><td>Constant propagation</td><td>forward</td><td>agree on the value</td><td>is this variable a known constant here?</td></tr>
+    <tr><td>Definite assignment</td><td>forward</td><td>intersection (must)</td><td>does this variable surely have a value here?</td></tr>
+    <tr><td>Type inference</td><td>forward</td><td>union (may)</td><td>which types can this variable hold here?</td></tr>
+    <tr><td>Liveness</td><td>backward</td><td>union (may)</td><td>may this value still be read later?</td></tr>
+  </tbody>
+</table>
+
+{% call g.remember() %}
+<li>Three-address code: one operation per instruction, with temporaries for intermediate results.</li>
+<li>A basic block runs start to finish; leaders are the first instruction, labels, and whatever follows a jump.</li>
+<li>The CFG joins blocks by their possible successors; loops are back edges.</li>
+<li>Data-flow analyses iterate over the CFG to a fixed point, forward or backward.</li>
+<li>Constant propagation finds known values; liveness finds dead stores.</li>
+{% endcall %}
+
+{% call g.exercise("Count the blocks") %}
+<p>How many basic blocks does this program have, and which edge is the back edge? Remember that <code>continue</code> jumps to the update step.</p>
+<pre class="code-inline">for i = 0; i &lt; 3; i += 1 {
+    print i;
+}
+print 9;</pre>
+{% call g.answer() %}
+<p>Five. B0 sets <code>i = 0</code>; B1 (label L1) tests <code>i &lt; 3</code>; B2 is the body, <code>print i</code>; B3 (L2) is the update <code>i = i + 1</code>; and B4 (L3), after the loop, prints 9. The update needs a block of its own because it has a label: <code>continue</code> jumps straight to it. The back edge is B3 → B1, the <code>goto L1</code> at the end of the update.</p>
+{% endcall %}
+{% call g.stage("ir", title="Check") %}
+for i = 0; i < 3; i += 1 {
+    print i;
+}
+print 9;
+{% endcall %}
+{% endcall %}
+{% endblock %}

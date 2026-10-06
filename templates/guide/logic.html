@@ -1,0 +1,80 @@
+{% extends "guide/lesson.html" %}
+{% import "guide/_macros.html" as g %}
+
+{% block lesson %}
+<p>Programs make decisions by asking yes-or-no questions. In MiniLang the answer is a number: <strong>1 means true</strong> and <strong>0 means false</strong>.</p>
+
+<h2>Comparisons</h2>
+<table class="table">
+  <thead><tr><th scope="col">Operator</th><th scope="col">Asks</th></tr></thead>
+  <tbody>
+    <tr><td><code>==</code></td><td>equal? (two equals signs: one <code>=</code> assigns)</td></tr>
+    <tr><td><code>!=</code></td><td>not equal?</td></tr>
+    <tr><td><code>&lt;</code>, <code>&gt;</code></td><td>less than? greater than?</td></tr>
+    <tr><td><code>&lt;=</code>, <code>&gt;=</code></td><td>less than or equal? greater than or equal?</td></tr>
+  </tbody>
+</table>
+
+{% call g.example() %}
+print 3 < 5;
+print 3 == 5;
+print 10 != 3;
+print 7 >= 7;
+{% endcall %}
+
+<h2>and, or, not</h2>
+<p>Combine questions with words:</p>
+<ul>
+  <li><code>a and b</code> is true when both are true.</li>
+  <li><code>a or b</code> is true when at least one is true.</li>
+  <li><code>not a</code> flips true and false.</li>
+</ul>
+
+{% call g.example() %}
+age = 15;
+print age >= 13 and age <= 19;
+print age < 13 or age > 19;
+print not (age == 15);
+{% endcall %}
+
+<p>The first line asks "is this a teenager?". To check that a value is in a range, write both sides out: MiniLang doesn't allow <code>13 &lt;= age &lt;= 19</code>.</p>
+
+<h2>Any number can be a condition</h2>
+<p>Where MiniLang expects a true-or-false value, 0 counts as false and <em>every other number</em> counts as true. So <code>not 5</code> is 0, and <code>2 and 3</code> is 1.</p>
+
+{% call g.example() %}
+print not 5;
+print 2 and 3;
+print 0 or 0;
+{% endcall %}
+
+<h2>Stopping early</h2>
+<p><code>and</code> and <code>or</code> only look at their right side when they need to. If the left side of an <code>and</code> is false, the answer is already false, so the right side never runs. That lets you guard against an error:</p>
+
+{% call g.example() %}
+d = 0;
+print d != 0 and 10 / d > 1;
+{% endcall %}
+
+<p>Without the guard, <code>10 / d</code> would divide by zero. Swap the two sides of the <code>and</code> and run it to see the difference.</p>
+
+{% call g.remember() %}
+<li>Comparisons give 1 for true and 0 for false.</li>
+<li><code>==</code> compares; a single <code>=</code> assigns.</li>
+<li><code>and</code>, <code>or</code> and <code>not</code> combine conditions; any non-zero number is true.</li>
+<li>The right side of <code>and</code> / <code>or</code> only runs when it's needed.</li>
+{% endcall %}
+
+{% call g.exercise("Leap years") %}
+<p>A year is a leap year if it divides by 4, except that years dividing by 100 aren't, unless they also divide by 400. Print 1 if <code>year</code> is a leap year and 0 if not. Try 2024, 1900 and 2000.</p>
+{% call g.example(title="Your turn") %}
+year = 2024;
+print year % 4 == 0;
+{% endcall %}
+{% call g.hint() %}<p>"Divides by 4" is <code>year % 4 == 0</code>. The exception and its exception fit in brackets: <code>(year % 100 != 0 or year % 400 == 0)</code>.</p>{% endcall %}
+{% call g.solution() %}
+year = 1900;
+print year % 4 == 0 and (year % 100 != 0 or year % 400 == 0);
+{% endcall %}
+{% endcall %}
+{% endblock %}

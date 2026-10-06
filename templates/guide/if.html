@@ -1,0 +1,85 @@
+{% extends "guide/lesson.html" %}
+{% import "guide/_macros.html" as g %}
+
+{% block lesson %}
+<p>An <code>if</code> statement runs a block of code only when its condition is true. The block goes between braces <code>{ }</code>, and you can put as many statements in it as you like.</p>
+
+{% call g.example() %}
+temperature = 31;
+if temperature > 30 {
+    print 1;
+    print temperature - 30;
+}
+print 0;
+{% endcall %}
+
+<p>The first two prints only happen because 31 &gt; 30. The last one is outside the braces, so it always runs. Change the temperature to 25 and run it again.</p>
+
+<h2>else</h2>
+<p><code>else</code> gives the other branch: exactly one of the two blocks runs.</p>
+
+{% call g.example() %}
+n = 7;
+if n % 2 == 0 {
+    print 0;
+} else {
+    print 1;
+}
+{% endcall %}
+
+<h2>else if</h2>
+<p>To choose between more than two options, chain them with <code>else if</code>. MiniLang checks the conditions from the top and runs the first block whose condition is true; <code>else</code> catches everything left over. Since there are no strings, this program turns marks into grade points:</p>
+
+{% call g.example() %}
+marks = 72;
+if marks >= 90 {
+    print 4;
+} else if marks >= 75 {
+    print 3;
+} else if marks >= 60 {
+    print 2;
+} else {
+    print 1;
+}
+{% endcall %}
+
+<p>Order matters here: 95 is also ≥ 75 and ≥ 60, but only the first matching branch runs.</p>
+
+<h2>Small rules</h2>
+<ul>
+  <li>The braces are required, even around a single statement.</li>
+  <li>The condition needs no brackets: <code>if x &gt; 0 {</code> is fine, and so is <code>if (x &gt; 0) {</code>.</li>
+  <li>Blocks can contain other <code>if</code> statements. Indenting the inside by four spaces keeps it readable; MiniLang itself ignores spaces.</li>
+</ul>
+
+<p>A classic slip is writing <code>=</code> when you mean <code>==</code>. MiniLang catches it:</p>
+
+{% call g.example(expect="parse") %}
+x = 5;
+if x = 5 {
+    print 1;
+}
+{% endcall %}
+
+{% call g.remember() %}
+<li><code>if condition { … }</code> runs the block only when the condition is true.</li>
+<li><code>else</code> runs when it isn't; <code>else if</code> adds more choices, checked top to bottom.</li>
+<li>Braces are always required. Compare with <code>==</code>.</li>
+{% endcall %}
+
+{% call g.exercise("Absolute value") %}
+<p>Print the absolute value of <code>n</code>: the number without its sign. For <code>n = -8</code> print 8, and for <code>n = 5</code> print 5.</p>
+{% call g.example(title="Your turn") %}
+n = -8;
+print n;
+{% endcall %}
+{% call g.hint() %}<p>Only negative numbers need changing, and <code>-n</code> flips the sign.</p>{% endcall %}
+{% call g.solution() %}
+n = -8;
+if n < 0 {
+    n = -n;
+}
+print n;
+{% endcall %}
+{% endcall %}
+{% endblock %}

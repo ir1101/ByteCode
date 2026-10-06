@@ -11,7 +11,7 @@
       <span class="win-btn" aria-hidden="true"></span>
     </div>
     <div class="win-body">
-      <p class="crumbs"><a href="{{ url_for('learn') }}">Learn</a> / Chapter {{ number }} of {{ chapters | length }}</p>
+      <p class="crumbs"><a href="{{ url_for('learn') }}#compiler">Inside the compiler</a> / Chapter {{ number }} of {{ chapters | length }}</p>
       <h1 id="chapter-title">{{ chapter.title }}</h1>
       <p class="lede">{{ chapter.summary }}</p>
 
@@ -43,7 +43,7 @@
       <div class="win-body">
         <p class="win-note">Open <code>{{ chapter.example }}</code> in the playground and look at the <strong>{{ {"tokens": "Tokens", "ast": "AST", "symbols": "Symbols", "ir": "IR", "bytecode": "Bytecode", "output": "Output"}[chapter.tab] }}</strong> tab: it shows this stage's output.</p>
         <div class="win-actions">
-          <a class="link-btn is-primary" href="{{ url_for('playground', example=chapter.example, tab=chapter.tab) }}"><span>Open in playground</span><span class="arrow" aria-hidden="true">↗</span></a>
+          <a class="link-btn is-primary" href="{{ url_for('playground', example=chapter.example, tab=chapter.tab) }}"><span data-hover-scramble>Open in playground</span><span class="arrow" aria-hidden="true"><b>↗</b></span></a>
         </div>
       </div>
     </section>
@@ -57,7 +57,7 @@
       <div class="win-body">
         <p class="win-note">The code this chapter walks through is <code>{{ chapter.source }}</code>.</p>
         <div class="win-actions">
-          <a class="link-btn" href="{{ project.repository }}/blob/main/{{ chapter.source }}" rel="noopener"><span>Read on GitHub</span><span class="arrow" aria-hidden="true">↗</span></a>
+          <a class="link-btn" href="{{ project.repository }}/blob/main/{{ chapter.source }}" rel="noopener"><span data-hover-scramble>Read on GitHub</span><span class="arrow" aria-hidden="true"><b>↗</b></span></a>
         </div>
       </div>
     </section>

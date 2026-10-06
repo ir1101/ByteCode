@@ -13,8 +13,8 @@
       <h1 id="lost-title" class="lost-title">{{ "Page not found" if code == 404 else "Something went wrong" }}</h1>
       <p class="win-note">{{ message }}</p>
       <div class="win-actions">
-        <a class="link-btn" href="{{ url_for('landing') }}"><span>Home</span><span class="arrow" aria-hidden="true">↗</span></a>
-        <a class="link-btn is-primary" href="{{ url_for('playground') }}"><span>Playground</span><span class="arrow" aria-hidden="true">↗</span></a>
+        <a class="link-btn" href="{{ url_for('landing') }}"><span data-hover-scramble>Home</span><span class="arrow" aria-hidden="true"><b>↗</b></span></a>
+        <a class="link-btn is-primary" href="{{ url_for('playground') }}"><span data-hover-scramble>Playground</span><span class="arrow" aria-hidden="true"><b>↗</b></span></a>
       </div>
     </div>
   </section>

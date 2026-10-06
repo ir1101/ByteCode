@@ -1,0 +1,79 @@
+{% extends "guide/lesson.html" %}
+{% import "guide/_macros.html" as g %}
+
+{% block lesson %}
+<p>Counting loops have three parts: a start, a condition, and a step. A <code>for</code> loop puts all three on one line, separated by semicolons:</p>
+
+{% call g.example() %}
+for i = 1; i <= 5; i += 1 {
+    print i * i;
+}
+{% endcall %}
+
+<p>That's exactly the same as this <code>while</code> loop, just tidier:</p>
+<pre class="code-inline">i = 1;              # start
+while i &lt;= 5 {      # condition
+    print i * i;
+    i += 1;         # step, after the block each time
+}</pre>
+
+<p>You can count in any direction, by any step:</p>
+
+{% call g.example() %}
+for n = 10; n > 0; n -= 3 {
+    print n;
+}
+{% endcall %}
+
+<h2>continue and break</h2>
+<ul>
+  <li><code>continue;</code> skips the rest of this pass and moves on to the next one (in a <code>for</code> loop, the step still happens).</li>
+  <li><code>break;</code> leaves the loop straight away.</li>
+</ul>
+
+{% call g.example() %}
+for i = 1; i <= 10; i += 1 {
+    if i % 2 == 0 {
+        continue;
+    }
+    if i > 7 {
+        break;
+    }
+    print i;
+}
+{% endcall %}
+
+<p>Even numbers are skipped, and the loop stops when it reaches 9.</p>
+
+<h2>Loops inside loops</h2>
+<p>A loop's block can hold another loop. The inner loop runs completely for every pass of the outer one:</p>
+
+{% call g.example() %}
+for row = 1; row <= 3; row += 1 {
+    for col = 1; col <= 3; col += 1 {
+        print row * col;
+    }
+}
+{% endcall %}
+
+<p>Each part of the <code>for</code> line is optional. <code>for ; ; { … }</code> loops forever, so it needs a <code>break</code> to stop it, as in the exercise below.</p>
+
+{% call g.remember() %}
+<li><code>for start; condition; step { … }</code> is a compact counting loop.</li>
+<li><code>continue;</code> jumps to the next pass, <code>break;</code> leaves the loop.</li>
+<li>Both only affect the innermost loop they are in.</li>
+{% endcall %}
+
+{% call g.exercise("First common multiple") %}
+<p>Find the first number above 100 that divides by both 7 and 11, and print it.</p>
+{% call g.hint() %}<p>Count up from 101 with no condition at all, test each number with <code>%</code>, and <code>break</code> when you find it.</p>{% endcall %}
+{% call g.solution() %}
+for n = 101; ; n += 1 {
+    if n % 7 == 0 and n % 11 == 0 {
+        print n;
+        break;
+    }
+}
+{% endcall %}
+{% endcall %}
+{% endblock %}

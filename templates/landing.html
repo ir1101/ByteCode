@@ -6,7 +6,7 @@
 <section class="win{% if light %} is-light{% endif %}" data-win="{{ id }}" aria-labelledby="win-{{ id }}">
   <div class="win-bar">
     <button type="button" class="win-handle" aria-label="Move the {{ title }} window"></button>
-    <h2 class="win-title" id="win-{{ id }}" data-scramble>[{{ title }}]</h2>
+    <h2 class="win-title" id="win-{{ id }}" data-scramble data-hover-scramble>[{{ title }}]</h2>
     {% if button == "toggle" %}
     <button type="button" class="win-btn" aria-expanded="true" aria-controls="win-{{ id }}-body" aria-label="Collapse {{ title }}"><span class="plus" aria-hidden="true">+</span></button>
     {% elif button == "pause" %}
@@ -34,16 +34,16 @@
     {% call window("pipeline", "Pipeline/list") %}
       <ol class="index-list">
         {% for c in chapters %}
-        <li><a href="{{ url_for('chapter', slug=c.slug) }}"><span class="n">[{{ loop.index0 }}]</span><span data-scramble-hover>{{ c.stage }}</span><span class="meta">{{ c.produces }}</span></a></li>
+        <li><a href="{{ url_for('chapter', slug=c.slug) }}" data-cursor-label="Chapter"><span class="n">[{{ loop.index0 }}]</span><span data-hover-scramble>{{ c.stage }}</span><span class="meta">{{ c.produces }}</span></a></li>
         {% endfor %}
       </ol>
     {% endcall %}
 
     {% call window("learn", "Learn") %}
-      <p class="win-note">{{ stats.chapters }} chapters, one for each stage of the compiler.</p>
+      <p class="win-note">{{ stats.lessons }} lessons on writing MiniLang, with examples that run in the page, then {{ stats.chapters }} chapters on how its compiler works.</p>
       <div class="win-actions">
-        <span class="chip is-accent">Being written</span>
-        <a class="link-btn" href="{{ url_for('learn') }}"><span>Start</span><span class="arrow" aria-hidden="true">↗</span></a>
+        <span class="chip is-ok">All ready</span>
+        <a class="link-btn" href="{{ url_for('learn') }}"><span data-hover-scramble>Start</span><span class="arrow" aria-hidden="true"><b>↗</b></span></a>
       </div>
     {% endcall %}
 
@@ -122,7 +122,7 @@
 
     {% call window("team", "Team") %}
       <dl class="readout team">
-        {% for name, reg in project.team %}<dt>{{ name }}</dt><dd>{{ reg }}</dd>{% endfor %}
+        {% for name, reg in project.team %}<dt data-hover-scramble="self">{{ name }}</dt><dd>{{ reg }}</dd>{% endfor %}
         <dt class="caps">Guide</dt><dd>{{ project.guide }}</dd>
       </dl>
     {% endcall %}
@@ -132,7 +132,7 @@
       <div class="meter" aria-hidden="true"><span id="stars-meter"></span></div>
       <div class="win-actions">
         <span class="chip" id="stars-chip">0 / {{ stats.max_stars }} stars</span>
-        <a class="link-btn" href="{{ url_for('playground') }}#levels"><span>Play</span><span class="arrow" aria-hidden="true">↗</span></a>
+        <a class="link-btn" href="{{ url_for('playground') }}#levels"><span data-hover-scramble>Play</span><span class="arrow" aria-hidden="true"><b>↗</b></span></a>
       </div>
     {% endcall %}
   </div>

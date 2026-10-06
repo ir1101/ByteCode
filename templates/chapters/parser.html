@@ -1,0 +1,109 @@
+{% extends "chapters/chapter.html" %}
+{% import "guide/_macros.html" as g %}
+
+{% block chapter %}
+<p>The lexer produced a flat list of tokens. But programs aren't flat: a loop contains statements, an expression contains smaller expressions. The <em>parser</em> checks that the tokens are in an order the language allows, and builds a <em>syntax tree</em> that shows how they nest. MiniLang uses a hand-written <em>recursive descent</em> parser: no parser generator, just one Python method per grammar rule.</p>
+
+{{ g.h2("Grammars") }}
+<p>A <em>grammar</em> describes every valid program with a handful of rules. Each rule says what one construct is made of. Here is MiniLang's, exactly as it appears at the top of <code>parser.py</code>:</p>
+
+{{ g.source("parser.py", start="program     := ", end="call        := ") }}
+
+<p>How to read it: <code>:=</code> means "is made of", <code>|</code> separates alternatives, <code>( … )*</code> means "repeated zero or more times", <code>?</code> means "optional", and words in quotes are tokens. So <code>while := "while" expr block</code> says: a while statement is the keyword <code>while</code>, then an expression, then a block.</p>
+
+<p>The trick of recursive descent is that <strong>every rule becomes a method that reads exactly what the rule describes</strong>. Compare the <code>while</code> rule with its method:</p>
+
+{{ g.source("parser.py", "Parser.while_stmt") }}
+
+<p><code>expect</code> consumes a token that must be there, or reports an error. <code>self.expr()</code> and <code>self.block()</code> call the methods for those rules, and those call others in turn. The "recursion" in the name is that a block contains statements, which can contain blocks again, so the methods call each other as deep as the program nests.</p>
+
+<p>Which rule applies is decided by looking at the current token. A statement starting with <code>while</code> must be a while statement; one starting with a name followed by <code>(</code> must be a call. One token of lookahead (two, for a call) is always enough, which is why there's never any guessing or backtracking:</p>
+
+{{ g.source("parser.py", "Parser.statement") }}
+
+{{ g.h2("Precedence by layering") }}
+<p><code>1 + 2 * 3</code> must mean <code>1 + (2 * 3)</code>. The grammar builds this in by splitting expressions into layers, from loosest to tightest: <code>or</code>, <code>and</code>, <code>not</code>, comparisons, <code>+ -</code>, <code>* / %</code>, unary minus, indexing, and finally single values. Each layer's method parses its operands by calling the next, tighter layer:</p>
+
+{{ g.source("parser.py", "Parser.additive") }}
+{{ g.source("parser.py", "Parser.term") }}
+
+<p>When <code>additive</code> asks <code>term</code> for an operand, <code>term</code> swallows the whole <code>2 * 3</code> before returning. So by the time <code>additive</code> sees the <code>+</code>, the multiplication is already a finished subtree:</p>
+
+{% call g.stage("ast") %}
+print 1 + 2 * 3;
+{% endcall %}
+
+<p>The <code>while</code> loop in each layer also fixes <em>associativity</em>: each new operator takes everything parsed so far as its left side. So <code>10 - 4 - 3</code> becomes <code>(10 - 4) - 3</code>, which is 3, and not <code>10 - (4 - 3)</code>, which would be 9:</p>
+
+{% call g.stage("ast") %}
+print 10 - 4 - 3;
+{% endcall %}
+
+<p>Brackets need no special rule: <code>primary</code> sees a <code>(</code> and simply calls <code>expr()</code> again from the loosest layer.</p>
+
+{{ g.h2("Building the tree") }}
+<p>Each method returns a node, and nodes hold the nodes of their parts, so the tree builds itself as the methods return. The node classes live in <code>ast_nodes.py</code>. Each one lists its fields, and every node remembers its line:</p>
+
+{{ g.source("ast_nodes.py", "Node") }}
+{{ g.source("ast_nodes.py", start="class If(Node):", end="fields = (\"condition\", \"body\")") }}
+
+<p>The tree keeps only what matters. Brackets, semicolons and braces have done their job of showing the structure, so they aren't in the tree at all:</p>
+
+{% call g.stage("ast") %}
+if x > 0 {
+    print x;
+} else {
+    print -x;
+}
+{% endcall %}
+
+<p>Again, <code>x</code> doesn't need to exist yet: the parser checks shape, not meaning. This tree is what the next four stages work on.</p>
+
+{{ g.h2("Syntactic sugar") }}
+<p>Some syntax is only a shorter way to write something the language can already say. <code>x += 1</code> means exactly <code>x = x + 1</code>, so the parser builds the tree for the longer form, and no later stage ever needs to know <code>+=</code> exists. This is called <em>desugaring</em>:</p>
+
+{{ g.source("parser.py", "Parser.assignment", start="if op.value in COMPOUND_OPS:", end="value = BinOp(") }}
+
+{% call g.stage("ast") %}
+x = 5;
+x += 2;
+{% endcall %}
+
+<p>The second statement's tree is an ordinary assignment of <code>x + 2</code>. The <code>else if</code> chain is handled the same way: an <code>else</code> whose body is another <code>if</code>.</p>
+
+{{ g.h2("Error recovery") }}
+<p>When the tokens don't fit the grammar, the simplest parser would stop at the first problem. MiniLang's keeps going, so you see every syntax error in one run. It uses two classic strategies.</p>
+
+<p><strong>Phrase-level recovery.</strong> A <code>;</code> missing at the end of a line is by far the most common slip. When <code>expect</code> wanted a <code>;</code> and the next token is on a later line, it records the error and carries on as if the <code>;</code> had been there:</p>
+
+{{ g.source("parser.py", "Parser.expect", start='if value == ";" and', end="return None") }}
+
+<p><strong>Panic mode.</strong> For any other error, the statement is abandoned and the parser skips tokens until a new statement could start: just after a <code>;</code>, or at a brace or a statement keyword. Then it continues as normal. Only the first error on each line is kept, because the rest are usually knock-on effects:</p>
+
+{{ g.source("parser.py", "Parser.synchronize") }}
+
+{% call g.stage("ast", expect="parse") %}
+x = 1
+y = 2 +;
+whiel y > 0 {
+    y -= 1;
+}
+{% endcall %}
+
+<p>Three errors, each on its own line: a missing <code>;</code> (repaired), a broken expression (skipped to the <code>;</code>), and a misspelled keyword that gets a "did you mean" hint from <code>difflib</code>.</p>
+
+{% call g.remember() %}
+<li>A grammar's rules describe every valid program; recursive descent turns each rule into a method.</li>
+<li>The current token decides which rule applies, so there's no backtracking.</li>
+<li>Precedence comes from layering: each layer calls the tighter one for its operands.</li>
+<li>The tree keeps structure, not punctuation, and every node keeps its line.</li>
+<li>Errors are repaired (a missing <code>;</code>) or skipped past (panic mode), so all of them are reported.</li>
+{% endcall %}
+
+{% call g.exercise("A power operator") %}
+<p>Suppose MiniLang gained a power operator <code>**</code> that binds tighter than <code>*</code>, so <code>2 * 3 ** 2</code> is 18. Which grammar rules and which parser methods would change?</p>
+{% call g.answer() %}
+<p>Add a new layer between <code>term</code> and <code>unary</code>: <code>power := unary ("**" power)?</code>. Then <code>term</code> calls <code>power()</code> for its operands instead of <code>unary()</code>, and a new <code>power</code> method parses the layer. Calling <code>power</code> again on its right side makes it <em>right</em>-associative, so <code>2 ** 3 ** 2</code> is <code>2 ** 9</code>, as in maths. The lexer would also need <code>"**"</code> in <code>TWO_CHAR_OPS</code>, and the compiler and VM a new opcode.</p>
+{% endcall %}
+{% endcall %}
+{% endblock %}

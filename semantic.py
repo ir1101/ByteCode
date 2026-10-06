@@ -319,6 +319,9 @@ class Analyzer:
             fn.symbols[name].reads.append(line)
             if name not in assigned:
                 if name in self.result.globals:
+                    # The local may have no value yet, so this read can reach the global.
+                    self.result.globals[name].reads.append(line)
+                    fn.globals_read.setdefault(name, []).append(line)
                     first = min(fn.symbols[name].assigned)
                     self.result.warn(line, "scope-trap",
                         f"'{name}' is read here before {fn.name}() assigns it, so this reads the global "

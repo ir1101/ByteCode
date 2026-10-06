@@ -1,0 +1,105 @@
+{% extends "chapters/chapter.html" %}
+{% import "guide/_macros.html" as g %}
+
+{% block chapter %}
+<p>The last stage runs the bytecode. MiniLang's <em>virtual machine</em> (VM) is a <em>stack machine</em>: a simulated computer, written in Python, whose instructions take their inputs from an operand stack and leave their results on it. Real processors work with registers instead, but stack machines are simple and compact, which is why the Java VM and Python's own interpreter work this way too.</p>
+
+{{ g.h2("Fetch, decode, execute") }}
+<p>The whole machine is one loop around a <em>program counter</em> (<code>pc</code>), the address of the next instruction. Each turn <strong>fetches</strong> the instruction at <code>pc</code>, moves <code>pc</code> on, <strong>decodes</strong> its opcode, and <strong>executes</strong> it. Jumps work simply by setting <code>pc</code> to somewhere else:</p>
+
+{{ g.source("vm.py", "VM.run", start="def run(self):", end='elif op == "POP":') }}
+
+<p>The trace below records the machine after every instruction: its address, the instruction, and the stack once it has run. It's shown with the optimizer off, so you see every instruction the compiler emitted:</p>
+
+{% call g.stage("trace") %}
+x = 4;
+print x * 2 + 1;
+{% endcall %}
+
+<p>The loop stops when <code>pc</code> runs off the end, which <code>HALT</code> arranges by setting it there.</p>
+
+{{ g.h2("The operand stack") }}
+<p>Every intermediate value lives on the operand stack. A binary operator pops its <strong>right</strong> operand first, because it was pushed last, and then its left one. For <code>ADD</code> that order doesn't matter, but for <code>SUB</code>, <code>DIV</code> and the comparisons it does:</p>
+
+{{ g.source("vm.py", "VM.run", start="elif op in BINARY_OPS:", end="self.stack.append(apply_binary(op, a, b, ins.line))") }}
+
+<p>The arithmetic itself lives in <code>apply_binary</code>. The optimizer calls the very same function when it folds constants, so compile-time and runtime results can never disagree. Its division rounds toward zero, like C and Java, rather than down like Python's <code>//</code>:</p>
+
+{{ g.source("vm.py", "apply_binary", start='if op == "DIV":', end="return a - b * _trunc_div(a, b)") }}
+
+{% call g.stage("trace") %}
+print 20 - 6;
+print -7 / 2;
+{% endcall %}
+
+<p>Watch the stack after <code>PUSH 6</code>: it holds <code>[20, 6]</code>, with 6 on top. <code>SUB</code> pops <code>b = 6</code>, then <code>a = 20</code>, and pushes <code>a - b</code>. Each statement leaves the stack empty again.</p>
+
+{{ g.h2("Frames and the call stack") }}
+<p>Next to the operand stack, the VM keeps a <em>call stack</em> of <code>Frame</code>s, one per active function call. A frame holds that call's local variables, and the address to return to:</p>
+
+{{ g.source("vm.py", "Frame") }}
+
+<p><code>CALL</code> pushes a new frame, remembering where to come back to, and jumps into the function. <code>RET</code> pops the return value, drops the frame, jumps back, and pushes the value for the caller. <code>LOAD</code> looks in the current frame's locals first, then in the globals. That's MiniLang's scope rule, enforced at runtime:</p>
+
+{{ g.source("vm.py", "VM.run", start='elif op == "CALL":', end="self.stack.append(value)") }}
+
+<p>Because recursion runs on this call stack, not on Python's, every call to a recursive function gets its own frame with its own copy of <code>n</code>:</p>
+
+{% call g.stage("trace") %}
+func fact(n) {
+    if n <= 1 { return 1; }
+    return n * fact(n - 1);
+}
+print fact(3);
+{% endcall %}
+
+<p>The trace shows the depth growing to 3 as the calls stack up, then unwinding as each <code>RET</code> hands a value back. While <code>fact(1)</code> runs, the two calls underneath are waiting with 3 and 2 on the operand stack. <code>TAIL_CALL</code> (chapter 6) is the one exception: it reuses the current frame instead of adding one.</p>
+
+{{ g.h2("Runtime errors and limits") }}
+<p>Some mistakes can only show up while the program runs: dividing by a value that happens to be 0, an index past the end of a list, input that has run out. The VM checks before every risky operation and raises a <code>VMError</code> carrying the instruction's source line, so the message still points at your code:</p>
+
+{{ g.source("vm.py", "VM.check_index") }}
+
+<p>It also refuses to run forever. Code arriving from a browser shouldn't be able to hang the server, so the VM has three limits: a number of steps (one million in the playground), a number of printed lines, and a call depth of 1,000:</p>
+
+{% call g.stage("output", expect="runtime") %}
+func down(n) {
+    return 1 + down(n + 1);
+}
+print down(0);
+{% endcall %}
+
+<p>Everything printed before an error is kept, and in the playground the step-through opens at the last good step, so you can see the state that led to the error.</p>
+
+{{ g.h2("Tracing") }}
+<p>The VM itself knows nothing about traces or the playground's step-through. It just calls an optional <code>on_step</code> hook after each instruction, handing over itself. The command line's <code>--trace</code> option plugs in a hook that prints one line per step; that's the text in every Try it box on this page:</p>
+
+{{ g.source("vm.py", "text_tracer") }}
+
+<p>The playground plugs in a different hook, which copies the stack, the globals and every frame's locals into a list after each step. That list is the JSON the step-through view scrolls through, which is why you can step backwards as well as forwards:</p>
+
+{{ g.source("api.py", "_trace_recorder", start="def record(addr, ins, vm):", end='"lines_printed": vm.lines_printed,') }}
+
+<p>Values are copied with <code>_snapshot</code> as they are recorded. Lists are shared by reference, so without a copy, a later <code>a[0] = 9</code> would rewrite every earlier step of the history.</p>
+
+{% call g.remember() %}
+<li>The VM is a fetch-decode-execute loop around a program counter; jumps just set <code>pc</code>.</li>
+<li>Operands are popped right first, then left; every statement leaves the stack as it found it.</li>
+<li>Each call gets a frame with its own locals and a return address; recursion uses the VM's call stack.</li>
+<li>Runtime errors carry source lines; step, output and call-depth limits stop runaway programs.</li>
+<li>Tracing is just a hook called after every instruction: printing for <code>--trace</code>, snapshots for the playground.</li>
+{% endcall %}
+
+{% call g.exercise("Read a trace") %}
+<p>Without running it, what is on the operand stack just after the <code>MUL</code> in this program, and what does it print?</p>
+<pre class="code-inline">a = 5;
+print a - 2 * 3;</pre>
+{% call g.answer() %}
+<p>Just after <code>MUL</code> the stack is <code>[5, 6]</code>: 5 was loaded for <code>a</code> and waits underneath while <code>2 * 3</code> is computed on top of it. Then <code>SUB</code> pops 6 and 5 and pushes −1, which is printed.</p>
+{% endcall %}
+{% call g.stage("trace", title="Check") %}
+a = 5;
+print a - 2 * 3;
+{% endcall %}
+{% endcall %}
+{% endblock %}

@@ -13,16 +13,16 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='theme.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
-<body>
+<body data-cursor="lite">
 <div class="app">
 
   <header class="topbar">
     <div class="brand">
       <h1 class="visually-hidden">MiniLang Playground</h1>
       <nav class="brand-pills" aria-label="MiniLang">
-        <a class="pill pill-solid" href="{{ url_for('landing') }}">MiniLang</a>
+        <a class="pill pill-solid" href="{{ url_for('landing') }}" data-hover-scramble>MiniLang</a>
         <span class="pill" aria-current="page">Playground</span>
-        <a class="pill" href="{{ url_for('learn') }}">Learn</a>
+        <a class="pill" href="{{ url_for('learn') }}" data-hover-scramble>Learn</a>
       </nav>
       <p class="pipeline" aria-label="Pipeline: lexer, parser, semantic analysis, type checker, IR, compiler, VM">
         <span>lexer</span><span aria-hidden="true">→</span><span>parser</span><span aria-hidden="true">→</span><span>semantic</span><span aria-hidden="true">→</span><span>types</span><span aria-hidden="true">→</span><span>IR</span><span aria-hidden="true">→</span><span>compiler</span><span aria-hidden="true">→</span><span>VM</span>
@@ -318,5 +318,6 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/selection/active-line.min.js"></script>
 <script src="{{ url_for('static', filename='app.js') }}"></script>
 <script src="{{ url_for('static', filename='game.js') }}"></script>
+<script src="{{ url_for('static', filename='fx.js') }}"></script>
 </body>
 </html>

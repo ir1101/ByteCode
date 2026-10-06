@@ -1,0 +1,132 @@
+{% extends "chapters/chapter.html" %}
+{% import "guide/_macros.html" as g %}
+
+{% block chapter %}
+<p>The code generator (next chapter) translates the program faithfully, one construct at a time. That's correct, but often wasteful: it computes <code>2 * 3</code> every time the line runs, stores values nobody reads, and jumps to jumps. The <em>optimizer</em> makes the program smaller and faster, under one strict rule: <strong>it must never change what the program prints, or which error it raises</strong>.</p>
+
+<p>Its passes run in this order, each feeding the next:</p>
+
+{{ g.source("optimizer.py", "optimize") }}
+
+<p>The first line compiles the original tree once just for its checks, so that optimizing can never hide an error. Then come constant propagation (chapter 5), constant folding, dead-store elimination, code generation, and finally a peephole pass over the bytecode. Each "Try it" below shows the bytecode the optimizer produces, with the size before optimizing in the first line.</p>
+
+{{ g.h2("Constant folding") }}
+<p><em>Constant folding</em> does arithmetic at compile time. If both operands of an operator are literal numbers, the folder computes the answer once and puts a single number in the tree. It uses the VM's own <code>apply_binary</code>, so <code>-7 / 2</code> folds to exactly what the VM would compute.</p>
+
+{{ g.source("optimizer.py", "Folder.binop") }}
+
+<p>Notice the guard: <code>x / 0</code> is never folded. Folding it would either crash the compiler or silently remove the error, and the rule says the program must fail exactly as before, at runtime, with its line number. Folding combines with constant propagation, which turns provably constant variables into literals first:</p>
+
+{% call g.stage("optimized") %}
+width = 6;
+height = 7;
+print width * height + 2 * 3;
+{% endcall %}
+
+<p>Everything collapses into <code>PUSH 48</code>. Even the stores of <code>width</code> and <code>height</code> are gone, which is the next pass.</p>
+
+{{ g.h2("Dead-store elimination") }}
+<p>Once propagation has replaced every read of <code>width</code> with 6, nothing reads <code>width</code> any more, so storing it is wasted work. Liveness analysis (chapter 5) finds such <em>dead stores</em>, and this pass deletes them. It repeats, because deleting <code>y = x</code> can make the earlier <code>x = …</code> dead too:</p>
+
+{{ g.source("optimizer.py", "remove_dead_stores") }}
+
+<p>But a store may only be deleted if computing its value is <em>harmless</em>: it can't fail and has no side effects. <code>x = a / b</code> might divide by zero, <code>x = xs[i]</code> might be out of range, and <code>x = f()</code> might print. Deleting any of those could hide an error or lose output, so only these are allowed:</p>
+
+{{ g.source("ir.py", "harmless") }}
+
+{% call g.stage("optimized") %}
+spare = [1, 2, 3];
+d = 0;
+unused = 10 / d;
+result = 0;
+result = 6 * 7;
+print result;
+{% endcall %}
+
+<p><code>spare</code> and the first <code>result</code> are gone, but <code>unused = 10 / d</code> stays even though nothing reads it: running it must still raise "division by zero" on line 3.</p>
+
+{{ g.h2("Peephole optimization") }}
+<p>The last pass looks at the finished bytecode through a small "peephole", a few instructions at a time, and rewrites wasteful patterns. It repeats until nothing changes:</p>
+<ul>
+  <li><strong>Constant branches:</strong> a constant pushed straight into <code>JUMP_IF_FALSE</code> decides the jump now. This removes <code>if 0</code>, <code>while 0</code>, and the test inside <code>while 1</code>.</li>
+  <li><strong>Jump threading:</strong> a jump to a <code>JUMP</code> goes straight to that jump's target.</li>
+  <li><strong>Jumps to the next instruction</strong> do nothing, so they're removed.</li>
+  <li><strong>Unreachable code:</strong> anything no path can reach is deleted, including code after a <code>return</code> and functions that are never called.</li>
+</ul>
+
+{{ g.source("optimizer.py", "_thread_jumps") }}
+{{ g.source("optimizer.py", "_remove_unreachable") }}
+
+<p>Deleting instructions shifts every address after them, so every jump and call target has to be renumbered. <code>_compact</code> does that, sending a jump aimed at a deleted instruction to the next one that survives. Compare the same program without and with the optimizer:</p>
+
+{% call g.stage("bytecode") %}
+i = 0;
+while 1 {
+    i += 1;
+    if i > 3 { break; }
+}
+if 0 { print 99; }
+print i;
+{% endcall %}
+
+{% call g.stage("optimized") %}
+i = 0;
+while 1 {
+    i += 1;
+    if i > 3 { break; }
+}
+if 0 { print 99; }
+print i;
+{% endcall %}
+
+{{ g.h2("Tail calls") }}
+<p>When a function's last act is to call another function and return its result, as in <code>return f(x);</code>, the caller has nothing left to do. So instead of pushing a new frame and later returning through two of them, the callee can <em>reuse</em> the current frame. The peephole pass spots <code>CALL</code> followed by <code>RET</code> and turns it into <code>TAIL_CALL</code>:</p>
+
+{{ g.source("optimizer.py", "_tail_calls") }}
+
+{% call g.stage("optimized") %}
+func sum_to(n, acc) {
+    if n == 0 { return acc; }
+    return sum_to(n - 1, acc + n);
+}
+print sum_to(5000, 0);
+{% endcall %}
+
+<p>With <code>TAIL_CALL</code>, this recursion runs in a single frame, so <code>sum_to(5000, 0)</code> works. With the optimizer off it needs 5,000 frames, and the VM stops it at its limit of 1,000 nested calls. This is the one deliberate exception to the rule: an optimized program can succeed where the unoptimized one ran out of call depth.</p>
+
+{% call g.stage("output") %}
+func sum_to(n, acc) {
+    if n == 0 { return acc; }
+    return sum_to(n - 1, acc + n);
+}
+print sum_to(5000, 0);
+{% endcall %}
+
+{{ g.h2("Proving it's safe") }}
+<p>An optimizer that changes behaviour is worse than none, so MiniLang tests the rule directly. A list of tricky programs runs twice, with and without the optimizer, and the outcomes must match exactly: the same output, or the same error, with the same message and line:</p>
+
+{{ g.source("tests/test_optimizer.py", "SameBehaviourTests.outcome") }}
+{{ g.source("tests/test_optimizer.py", "SameBehaviourTests.test_snippets") }}
+
+<p>The programs cover the cases most likely to go wrong: division by zero inside foldable expressions, variables that may be undefined, short-circuit logic with side effects, aliased lists, and recursion. Every bug found while building the optimizer became another entry in that list.</p>
+
+{% call g.remember() %}
+<li>The rule: never change what the program prints, or which error it raises.</li>
+<li>Folding computes constant arithmetic at compile time, but never <code>x / 0</code>.</li>
+<li>Dead stores are deleted only when computing their value can't fail or print.</li>
+<li>The peephole pass resolves constant branches, threads jumps and drops unreachable code, renumbering targets as it goes.</li>
+<li><code>return f(…)</code> becomes <code>TAIL_CALL</code>, reusing the frame.</li>
+{% endcall %}
+
+{% call g.exercise("Why not delete it?") %}
+<p>Nothing reads <code>slot</code> below. Why doesn't the optimizer delete the store on line 2?</p>
+{% call g.stage("optimized", title="Your turn") %}
+xs = [10, 20];
+slot = xs[5];
+print 1;
+{% endcall %}
+{% call g.answer() %}
+<p>Reading <code>xs[5]</code> fails at runtime: the list has only two items. If the store were deleted, the read would go with it, and the program would print 1 instead of stopping with "index 5 is out of range". <code>harmless</code> only allows numbers, lists of harmless values, surely-assigned variables, and <code>==</code> / <code>!=</code> comparisons, and indexing is none of these.</p>
+{% endcall %}
+{% endcall %}
+{% endblock %}

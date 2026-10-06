@@ -1,0 +1,74 @@
+{% extends "guide/lesson.html" %}
+{% import "guide/_macros.html" as g %}
+
+{% block lesson %}
+<p>MiniLang works with <em>whole numbers</em> (integers): …, -2, -1, 0, 1, 2, …. There are no decimals, and numbers can be as large as you need, so they never overflow.</p>
+
+<h2>The five operators</h2>
+<table class="table">
+  <thead><tr><th scope="col">Operator</th><th scope="col">Meaning</th><th scope="col">Example</th><th scope="col">Result</th></tr></thead>
+  <tbody>
+    <tr><td><code>+</code></td><td>add</td><td><code>7 + 2</code></td><td>9</td></tr>
+    <tr><td><code>-</code></td><td>subtract</td><td><code>7 - 2</code></td><td>5</td></tr>
+    <tr><td><code>*</code></td><td>multiply</td><td><code>7 * 2</code></td><td>14</td></tr>
+    <tr><td><code>/</code></td><td>divide, dropping any remainder</td><td><code>7 / 2</code></td><td>3</td></tr>
+    <tr><td><code>%</code></td><td>remainder after dividing</td><td><code>7 % 2</code></td><td>1</td></tr>
+  </tbody>
+</table>
+
+<h2>Which goes first</h2>
+<p>Just like in maths, <code>*</code>, <code>/</code> and <code>%</code> happen before <code>+</code> and <code>-</code>. Operators of the same kind go left to right. Brackets change the order.</p>
+
+{% call g.example() %}
+print 2 + 3 * 4;
+print (2 + 3) * 4;
+print 20 - 5 - 3;
+print 20 - (5 - 3);
+{% endcall %}
+
+<h2>Division and remainder</h2>
+<p>Because there are no decimals, <code>/</code> gives the whole part of the answer, and <code>%</code> gives what's left over. Together they describe a division completely: 17 sweets shared by 5 children is 3 each, with 2 left over.</p>
+
+{% call g.example() %}
+print 17 / 5;
+print 17 % 5;
+print 10 % 2;
+print 11 % 2;
+{% endcall %}
+
+<p><code>n % 2</code> is 0 for even numbers and 1 for odd ones, which you'll use a lot. Division rounds <em>toward zero</em>, and the remainder takes the sign of the number being divided:</p>
+
+{% call g.example() %}
+print -7 / 2;
+print -7 % 2;
+print -(3 + 4);
+print 1000000 * 1000000;
+{% endcall %}
+
+<p>A minus sign in front of a value makes it negative, as in <code>-(3 + 4)</code>. The last line shows that big results are no problem.</p>
+
+<h2>Dividing by zero</h2>
+<p>There's no answer to 5 / 0, so MiniLang stops with a <em>runtime error</em>: an error that happens while the program runs. It names the line, and any output printed before it is kept.</p>
+
+{% call g.example(expect="runtime") %}
+print 10 / 5;
+print 10 / 0;
+print 10 / 2;
+{% endcall %}
+
+{% call g.remember() %}
+<li>Numbers are whole numbers, as large as you need.</li>
+<li><code>* / %</code> go before <code>+ -</code>; use brackets to change the order.</li>
+<li><code>/</code> drops the remainder; <code>%</code> is the remainder.</li>
+<li>Dividing by zero is a runtime error.</li>
+{% endcall %}
+
+{% call g.exercise("Sharing pizza") %}
+<p>Two pizzas have 8 slices each, and 3 friends share them equally. Print how many slices each friend gets, then how many are left over. Use only numbers and operators.</p>
+{% call g.hint() %}<p>There are <code>2 * 8</code> slices. Divide them by 3 for the share, and use <code>%</code> for the leftovers.</p>{% endcall %}
+{% call g.solution() %}
+print 2 * 8 / 3;
+print 2 * 8 % 3;
+{% endcall %}
+{% endcall %}
+{% endblock %}

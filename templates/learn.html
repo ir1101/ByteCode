@@ -1,6 +1,6 @@
 {% extends "site_base.html" %}
 {% block title %}Learn · MiniLang{% endblock %}
-{% block description %}Learn how a compiler works, one stage at a time, with MiniLang's own source code and playground.{% endblock %}
+{% block description %}Learn to program in MiniLang with runnable lessons, then see how its compiler works, one stage at a time.{% endblock %}
 
 {% block main %}
 <header class="learn-head">
@@ -8,38 +8,75 @@
   <section class="win is-light" aria-labelledby="learn-intro-title">
     <div class="win-bar">
       <span class="win-handle" aria-hidden="true"></span>
-      <h2 class="win-title" id="learn-intro-title">[Learn/readme]</h2>
+      <h2 class="win-title" id="learn-intro-title" data-hover-scramble>[Learn/readme]</h2>
       <span class="win-btn" aria-hidden="true"></span>
     </div>
     <div class="win-body">
-      <p>How a compiler works, one stage at a time. Each chapter explains one idea, walks through the part of MiniLang that does it, and ends with something to try in the playground.</p>
-      <p>The chapters are being written now. Each card shows what its chapter will cover.</p>
+      <p>Two tracks. First, learn to <strong>write MiniLang</strong>: {{ lessons | length }} short lessons whose examples run right on the page. Then look <strong>inside the compiler</strong>: {{ chapters | length }} chapters, one per stage, from characters to a running stack machine.</p>
+      <p>No setup needed: every example can be edited and run here, or opened in the playground.</p>
     </div>
   </section>
 </header>
 
-<ol class="chapters" aria-label="Chapters">
-  {% for c in chapters %}
-  <li>
-    <section class="win chapter-card" aria-labelledby="chapter-{{ c.slug }}">
-      <div class="win-bar">
-        <span class="win-handle" aria-hidden="true"></span>
-        <p class="win-title" aria-hidden="true">[{{ "%02d" | format(loop.index) }}/{{ c.stage }}]</p>
-        <span class="win-btn" aria-hidden="true"></span>
-      </div>
-      <div class="win-body">
-        <h2 id="chapter-{{ c.slug }}" class="chapter-card-title"><a href="{{ url_for('chapter', slug=c.slug) }}">{{ c.title }}</a></h2>
-        <p>{{ c.summary }}</p>
-        <ul class="topic-list" aria-label="Topics">
-          {% for t in c.topics %}<li>{{ t.title }}</li>{% endfor %}
-        </ul>
-        <div class="card-foot">
-          <code>{{ c.source }}</code>
-          {% if c.status == "ready" %}<span class="chip is-ok">Ready</span>{% else %}<span class="chip is-accent">Outline</span>{% endif %}
+<section class="track" id="language" aria-labelledby="language-title">
+  <div class="track-head">
+    <div>
+      <p class="track-kicker">[Track 1/Language]</p>
+      <h2 class="track-title" id="language-title">Learn MiniLang</h2>
+      <p class="track-text">From your first <code>print</code> to functions, lists and input. Each lesson has runnable examples, a "Remember" summary and an exercise with a solution.</p>
+    </div>
+    <a class="link-btn is-primary" href="{{ url_for('lesson', slug=lessons[0].slug) }}"><span data-hover-scramble>Start lesson 1</span><span class="arrow" aria-hidden="true"><b>↗</b></span></a>
+  </div>
+  <ol class="lessons" aria-label="Lessons">
+    {% for l in lessons %}
+    <li>
+      <section class="win lesson-card" aria-labelledby="lesson-{{ l.slug }}" data-cursor-frame>
+        <div class="win-bar">
+          <span class="win-handle" aria-hidden="true"></span>
+          <p class="win-title" aria-hidden="true" data-hover-scramble>[Lesson {{ "%02d" | format(loop.index) }}]</p>
+          <span class="win-btn" aria-hidden="true"></span>
         </div>
-      </div>
-    </section>
-  </li>
-  {% endfor %}
-</ol>
+        <div class="win-body">
+          <h3 id="lesson-{{ l.slug }}"><a href="{{ url_for('lesson', slug=l.slug) }}" data-cursor-label="Start">{{ l.title }}</a></h3>
+          <p>{{ l.summary }}</p>
+        </div>
+      </section>
+    </li>
+    {% endfor %}
+  </ol>
+</section>
+
+<section class="track" id="compiler" aria-labelledby="compiler-title">
+  <div class="track-head">
+    <div>
+      <p class="track-kicker">[Track 2/Compiler]</p>
+      <h2 class="track-title" id="compiler-title">Inside the compiler</h2>
+      <p class="track-text">How MiniLang's own compiler turns your program into bytecode and runs it, one chapter per stage. Each chapter quotes the real source code, and its live demos show exactly what that stage makes of a program you can edit.</p>
+    </div>
+  </div>
+  <ol class="chapters" aria-label="Chapters">
+    {% for c in chapters %}
+    <li>
+      <section class="win chapter-card" aria-labelledby="chapter-{{ c.slug }}" data-cursor-frame>
+        <div class="win-bar">
+          <span class="win-handle" aria-hidden="true"></span>
+          <p class="win-title" aria-hidden="true" data-hover-scramble>[{{ "%02d" | format(loop.index) }}/{{ c.stage }}]</p>
+          <span class="win-btn" aria-hidden="true"></span>
+        </div>
+        <div class="win-body">
+          <h3 id="chapter-{{ c.slug }}" class="chapter-card-title"><a href="{{ url_for('chapter', slug=c.slug) }}" data-cursor-label="Read">{{ c.title }}</a></h3>
+          <p>{{ c.summary }}</p>
+          <ul class="topic-list" aria-label="Topics">
+            {% for t in c.topics %}<li>{{ t.title }}</li>{% endfor %}
+          </ul>
+          <div class="card-foot">
+            <code>{{ c.source }}</code>
+            {% if c.status == "ready" %}<span class="chip is-ok">Ready</span>{% else %}<span class="chip is-accent">Outline</span>{% endif %}
+          </div>
+        </div>
+      </section>
+    </li>
+    {% endfor %}
+  </ol>
+</section>
 {% endblock %}

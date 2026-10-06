@@ -1,0 +1,108 @@
+{% extends "chapters/chapter.html" %}
+{% import "guide/_macros.html" as g %}
+
+{% block chapter %}
+<p>A compiler never works with your program as raw text for long. Its first stage, the <em>lexer</em> (also called a scanner), reads the characters once, from left to right, and groups them into <em>tokens</em>: the words and punctuation of the language. Every later stage works with tokens and never looks at characters again.</p>
+
+{{ g.h2("Characters to tokens") }}
+<p>Here is a short program, and the list of tokens the lexer hands to the parser. Spaces and line breaks have disappeared: they only ever separated tokens.</p>
+
+{% call g.stage("tokens") %}
+x = 6 * 7;
+print x;
+{% endcall %}
+
+<p>Each token records three things: its <strong>type</strong>, its <strong>value</strong>, and the <strong>line</strong> it started on. MiniLang has just five token types:</p>
+
+<table class="table">
+  <thead><tr><th scope="col">Type</th><th scope="col">Examples</th><th scope="col">Value</th></tr></thead>
+  <tbody>
+    <tr><td><code>INT</code></td><td><code>7</code>, <code>2024</code></td><td>the number itself (a Python <code>int</code>)</td></tr>
+    <tr><td><code>IDENT</code></td><td><code>x</code>, <code>total</code>, <code>fact</code></td><td>the name</td></tr>
+    <tr><td><code>KEYWORD</code></td><td><code>print</code>, <code>while</code>, <code>and</code></td><td>the word</td></tr>
+    <tr><td><code>OP</code></td><td><code>+</code>, <code>&lt;=</code>, <code>{</code>, <code>;</code></td><td>the symbol</td></tr>
+    <tr><td><code>EOF</code></td><td>end of file</td><td>none</td></tr>
+  </tbody>
+</table>
+
+<p>The extra <code>EOF</code> token at the end is a <em>sentinel</em>: the parser can always ask "what's the next token?" without checking whether it has run off the end of the list. A token itself is tiny:</p>
+
+{{ g.source("lexer.py", "Token.__init__") }}
+
+<p>The lexer is one loop. It looks at the current character, and that one character decides what kind of token starts here: a digit starts a number, a letter starts a word, and so on. Peeking at a character without consuming it is called <em>lookahead</em>, and the lexer only ever needs one or two characters of it.</p>
+
+{{ g.source("lexer.py", "Lexer.tokenize") }}
+
+<p>Two small helpers do all the moving: <code>peek()</code> looks ahead without moving, and <code>advance()</code> consumes one character.</p>
+
+{{ g.h2("Keywords and names") }}
+<p>When the current character is a letter, the lexer reads the <em>whole</em> word first, as far as letters, digits and underscores go. Only then does it decide whether the word is a keyword, by looking it up in a set:</p>
+
+{{ g.source("lexer.py", "Lexer.read_word") }}
+{{ g.source("lexer.py", start="KEYWORDS = {", end='"and", "or", "not"') }}
+
+<p>Why not spot keywords as they appear? Because <code>printer</code> starts with <code>print</code>, and <code>formula</code> starts with <code>for</code>. Reading the longest word first and then classifying it gets these right automatically:</p>
+
+{% call g.stage("tokens") %}
+printer = 1;
+format = printer + 2;
+print format;
+{% endcall %}
+
+<p>Numbers work the same way: <code>read_number</code> consumes every digit, then converts the whole run with <code>int()</code>. A digit followed straight away by a letter, like <code>12ab</code>, is neither a number nor a name, so it's reported as an error.</p>
+
+{{ g.h2("Longest match") }}
+<p>Some operators are two characters long, and their first character is an operator on its own: <code>&lt;=</code> starts with <code>&lt;</code>, and <code>+=</code> starts with <code>+</code>. The lexer always tries the two-character operators first, so it takes the longest token that fits. This rule is called <em>maximal munch</em>.</p>
+
+{{ g.source("lexer.py", start="TWO_CHAR_OPS = {", end="ONE_CHAR_OPS =") }}
+
+{% call g.stage("tokens") %}
+if x <= 10 { x += 1; }
+{% endcall %}
+
+<p>Without longest match, <code>x &lt;= 10</code> would become <code>x</code>, <code>&lt;</code>, <code>=</code>, <code>10</code>, and the parser would see an assignment where it expected a comparison. Notice that the lexer happily accepts <code>x</code> here even though nothing defines it: the lexer only checks spelling, not meaning. That's the job of later stages.</p>
+
+{{ g.h2("Comments and line numbers") }}
+<p>A <code>#</code> makes the lexer skip characters up to the end of the line, and spaces, tabs and line breaks are skipped as well. None of them become tokens. But line breaks aren't completely forgotten: <code>advance()</code> counts them, and every token is stamped with the line it started on.</p>
+
+{{ g.source("lexer.py", "Lexer.advance") }}
+
+<p>That line number travels with the token through every stage. The parser copies it into the syntax tree, the compiler copies it into each bytecode instruction, and the VM reports it when something goes wrong at runtime. A runtime error can name line 12 only because the lexer counted line breaks at the very start.</p>
+
+{% call g.stage("tokens") %}
+# a comment on line 1
+total = 10;   # and another
+
+print total;
+{% endcall %}
+
+{{ g.h2("Recovering from bad characters") }}
+<p>When a character can't start any token, such as <code>@</code> or <code>&amp;</code>, the lexer doesn't give up. It records an error, skips the bad run of characters, and carries on, so one run reports every bad character in the file. For characters that people bring from other languages, it adds a hint:</p>
+
+{{ g.source("lexer.py", "Lexer.skip_unexpected") }}
+
+{% call g.stage("tokens", expect="lex") %}
+x = 4 @ 2;
+if x > 1 && x < 9 { print x; }
+{% endcall %}
+
+<p>The errors are collected in a list, and only at the end does <code>tokenize</code> raise the first one, carrying all of them. Since the tokens around a bad character can't be trusted, the pipeline stops here: the parser never sees a token list with holes in it.</p>
+
+{% call g.remember() %}
+<li>The lexer turns characters into tokens: <code>INT</code>, <code>IDENT</code>, <code>KEYWORD</code>, <code>OP</code>, and a closing <code>EOF</code>.</li>
+<li>One character of lookahead decides what kind of token starts next.</li>
+<li>Words are read whole, then looked up: that's what makes <code>printer</code> a name.</li>
+<li>Longest match: two-character operators are tried before one-character ones.</li>
+<li>Comments and spaces vanish, but every token keeps its line number for error messages.</li>
+{% endcall %}
+
+{% call g.exercise("Predict the tokens") %}
+<p>How many tokens does <code>if n>=10{print-n;}</code> produce, counting <code>EOF</code>? Work it out on paper, then check.</p>
+{% call g.answer() %}
+<p>11: <code>if</code>, <code>n</code>, <code>&gt;=</code>, <code>10</code>, <code>{</code>, <code>print</code>, <code>-</code>, <code>n</code>, <code>;</code>, <code>}</code> and <code>EOF</code>. No spaces are needed anywhere: the character that can't continue one token is where the next one begins. Longest match keeps <code>&gt;=</code> in one piece. Run it to confirm.</p>
+{% endcall %}
+{% call g.stage("tokens", title="Check") %}
+if n>=10{print-n;}
+{% endcall %}
+{% endcall %}
+{% endblock %}

@@ -1,0 +1,92 @@
+{% extends "guide/lesson.html" %}
+{% import "guide/_macros.html" as g %}
+
+{% block lesson %}
+<p>Every programmer makes mistakes all day; the skill is reading the message and fixing them quickly. MiniLang checks your program in stages, and every message names its stage and its line. Most stages also keep going after the first problem, so you see every mistake at once.</p>
+
+<table class="table">
+  <thead><tr><th scope="col">Stage</th><th scope="col">When</th><th scope="col">Typical cause</th></tr></thead>
+  <tbody>
+    <tr><td>Lexer</td><td>before running</td><td>a character MiniLang doesn't use, such as <code>&amp;</code> or <code>"</code></td></tr>
+    <tr><td>Parse</td><td>before running</td><td>the grammar is wrong: a missing <code>;</code>, brace or bracket</td></tr>
+    <tr><td>Semantic</td><td>before running</td><td>a name that is never defined, or a call with the wrong number of values</td></tr>
+    <tr><td>Type</td><td>before running</td><td>a list used where a number is needed, or the other way round</td></tr>
+    <tr><td>Runtime</td><td>while running</td><td>dividing by zero, an index out of range, running out of input</td></tr>
+  </tbody>
+</table>
+
+<h2>Errors found before running</h2>
+<p>The first four stages read the program without running it. If they find anything, nothing runs. They often suggest a fix:</p>
+
+{% call g.example(expect="lex") %}
+x = 4;
+if x > 1 && x < 9 {
+    print x;
+}
+{% endcall %}
+
+{% call g.example(expect="parse") %}
+whiel x < 3 {
+    x = x + 1
+}
+{% endcall %}
+
+<p>Two mistakes, two messages: a misspelled keyword and a missing <code>;</code>. Fix the first message first, because a later one is sometimes just a knock-on effect of it.</p>
+
+{% call g.example(expect="semantic") %}
+total = 0;
+func average(a, b) {
+    return (a + b) / 2;
+}
+print avrage(4, 8);
+print average(4);
+{% endcall %}
+
+<h2>Errors while running</h2>
+<p>A runtime error stops the program at that line. Everything printed before it stays, which helps you work out how far it got. In the playground, the step-through shows exactly what the program was doing just before.</p>
+
+{% call g.example(expect="runtime") %}
+xs = [5, 10, 15];
+for i = 0; i <= len(xs); i += 1 {
+    print xs[i];
+}
+{% endcall %}
+
+<p>The loop runs one time too many: <code>&lt;=</code> should be <code>&lt;</code>.</p>
+
+<h2>Warnings</h2>
+<p>A <em>warning</em> doesn't stop the program, but it points at something that is probably a mistake: a variable that is never used, code that can never run, or a value that is overwritten before anyone reads it.</p>
+
+{% call g.example() %}
+result = 0;
+result = 6 * 7;
+spare = 5;
+print result;
+{% endcall %}
+
+{% call g.remember() %}
+<li>Every message gives a stage and a line number: start there.</li>
+<li>Fix the first error first; later ones may disappear with it.</li>
+<li>Runtime errors keep the output printed before them; step through to see why.</li>
+<li>Warnings don't stop the program, but are usually worth fixing.</li>
+{% endcall %}
+
+{% call g.exercise("Fix it") %}
+<p>This program should print 1 + 2 + … + 10, which is 55. It has three mistakes. Read the messages, fix them one at a time, and run it until it works.</p>
+{% call g.example(title="Your turn", expect="parse") %}
+total = 0
+for i = 1; i <= 10; i += 1 {
+    totl += i;
+}
+print total;
+{% endcall %}
+{% call g.hint() %}<p>The parser finds the first one. Once it's fixed, semantic analysis finds a misspelled name.</p>{% endcall %}
+{% call g.solution() %}
+total = 0;
+for i = 1; i <= 10; i += 1 {
+    total += i;
+}
+print total;
+{% endcall %}
+{% endcall %}
+{% endblock %}

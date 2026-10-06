@@ -1,0 +1,97 @@
+{% extends "site_base.html" %}
+{% block title %}{{ chapter.title }} · Inside the compiler · MiniLang{% endblock %}
+{% block description %}{{ chapter.summary }}{% endblock %}
+
+{% block main %}
+<div class="chapter-page lesson-page">
+  <article class="win" aria-labelledby="chapter-title">
+    <div class="win-bar">
+      <span class="win-handle" aria-hidden="true"></span>
+      <p class="win-title" aria-hidden="true" data-hover-scramble>[Chapter {{ "%02d" | format(number) }}/{{ chapter.stage }}]</p>
+      <span class="win-btn" aria-hidden="true"></span>
+    </div>
+    <div class="win-body">
+      <p class="crumbs"><a href="{{ url_for('learn') }}#compiler">Inside the compiler</a> / Chapter {{ number }} of {{ chapters | length }}</p>
+      <h1 id="chapter-title">{{ chapter.title }}</h1>
+      <p class="lede">{{ chapter.summary }}</p>
+
+      <nav class="pipe" aria-label="Where this stage sits in the pipeline">
+        <ol>
+          {% for c in chapters %}
+          <li><a href="{{ url_for('chapter', slug=c.slug) }}"{% if c.slug == chapter.slug %} aria-current="step"{% endif %}>{{ c.stage }}</a></li>
+          {% endfor %}
+        </ol>
+      </nav>
+
+      <nav class="toc" aria-labelledby="toc-title">
+        <p class="toc-title" id="toc-title">In this chapter</p>
+        <ol>
+          {% for t in chapter.topics %}<li><a href="#{{ t.title | slug }}">{{ t.title }}</a><span>{{ t.summary }}</span></li>{% endfor %}
+        </ol>
+      </nav>
+
+      <p class="tip">Code quoted from <code>{{ chapter.source }}</code> is pulled from the real file, so it always matches. The <strong>Try it</strong> boxes run MiniLang through the compiler up to this stage: edit the code and press <strong>Run</strong> (or <kbd class="kbd-key">Ctrl</kbd> <kbd class="kbd-key">Enter</kbd>) to see what changes.</p>
+
+      <div class="prose">
+        {% block chapter %}{% endblock %}
+      </div>
+
+      <nav class="pager" aria-label="Chapters">
+        {% if previous %}<a href="{{ url_for('chapter', slug=previous.slug) }}"><span class="dir">← Previous</span><span>{{ previous.title }}</span></a>
+        {% else %}<a href="{{ url_for('learn') }}#language"><span class="dir">← Back</span><span>Learn MiniLang</span></a>{% endif %}
+        {% if following %}<a class="next" href="{{ url_for('chapter', slug=following.slug) }}"><span class="dir">Next →</span><span>{{ following.title }}</span></a>
+        {% else %}<a class="next" href="{{ url_for('playground') }}"><span class="dir">Next →</span><span>Try it all in the playground</span></a>{% endif %}
+      </nav>
+    </div>
+  </article>
+
+  <aside class="side-stack" aria-label="About this chapter">
+    <section class="win is-light" aria-labelledby="try-title">
+      <div class="win-bar">
+        <span class="win-handle" aria-hidden="true"></span>
+        <h2 class="win-title" id="try-title" data-hover-scramble>[Open the stage]</h2>
+        <span class="win-btn" aria-hidden="true"></span>
+      </div>
+      <div class="win-body">
+        <p class="win-note">See this stage on a full program: open <code>{{ chapter.example }}</code> in the playground on the <strong>{{ {"tokens": "Tokens", "ast": "AST", "symbols": "Symbols", "ir": "IR", "bytecode": "Bytecode", "output": "Output"}[chapter.tab] }}</strong> tab.</p>
+        <div class="win-actions">
+          <a class="link-btn is-primary" href="{{ url_for('playground', example=chapter.example, tab=chapter.tab) }}"><span data-hover-scramble>Open in playground</span><span class="arrow" aria-hidden="true"><b>↗</b></span></a>
+        </div>
+      </div>
+    </section>
+
+    <section class="win" aria-labelledby="source-title">
+      <div class="win-bar">
+        <span class="win-handle" aria-hidden="true"></span>
+        <h2 class="win-title" id="source-title" data-hover-scramble>[Source]</h2>
+        <span class="win-btn" aria-hidden="true"></span>
+      </div>
+      <div class="win-body">
+        <p class="win-note">This stage lives in <code>{{ chapter.source }}</code>. It hands <strong>{{ chapter.produces | lower }}</strong> to the next stage.</p>
+        <div class="win-actions">
+          <a class="link-btn" href="{{ project.repository }}/blob/main/{{ chapter.source }}" rel="noopener"><span data-hover-scramble>Read the file</span><span class="arrow" aria-hidden="true"><b>↗</b></span></a>
+        </div>
+      </div>
+    </section>
+
+    <nav class="win" aria-labelledby="all-title">
+      <div class="win-bar">
+        <span class="win-handle" aria-hidden="true"></span>
+        <h2 class="win-title" id="all-title" data-hover-scramble>[Chapters]</h2>
+        <span class="win-btn" aria-hidden="true"></span>
+      </div>
+      <div class="win-body">
+        <ol class="index-list">
+          {% for c in chapters %}
+          <li><a href="{{ url_for('chapter', slug=c.slug) }}"{% if c.slug == chapter.slug %} aria-current="page"{% endif %}><span class="n">{{ "%02d" | format(loop.index) }}</span><span>{{ c.title }}</span><span class="meta">{{ c.stage }}</span></a></li>
+          {% endfor %}
+        </ol>
+      </div>
+    </nav>
+  </aside>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='guide.js') }}"></script>
+{% endblock %}

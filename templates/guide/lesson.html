@@ -1,0 +1,61 @@
+{% extends "site_base.html" %}
+{% block title %}{{ lesson.title }} · Learn MiniLang{% endblock %}
+{% block description %}{{ lesson.summary }}{% endblock %}
+
+{% block main %}
+<div class="chapter-page lesson-page">
+  <article class="win" aria-labelledby="lesson-title">
+    <div class="win-bar">
+      <span class="win-handle" aria-hidden="true"></span>
+      <p class="win-title" aria-hidden="true" data-hover-scramble>[Lesson {{ "%02d" | format(number) }}/{{ lessons | length }}]</p>
+      <span class="win-btn" aria-hidden="true"></span>
+    </div>
+    <div class="win-body">
+      <p class="crumbs"><a href="{{ url_for('learn') }}#language">Learn MiniLang</a> / Lesson {{ number }} of {{ lessons | length }}</p>
+      <h1 id="lesson-title">{{ lesson.title }}</h1>
+      <p class="lede">{{ lesson.summary }}</p>
+      <p class="tip">Every example below runs. Edit the code and press <strong>Run</strong> (or <kbd class="kbd-key">Ctrl</kbd> <kbd class="kbd-key">Enter</kbd>), or open it in the playground to see every compiler stage.</p>
+
+      <div class="prose">
+        {% block lesson %}{% endblock %}
+      </div>
+
+      {% if level %}
+      <a class="practise" href="{{ url_for('playground') }}#level={{ level.id }}" data-cursor-label="Play">
+        <span class="practise-kicker">Practise in the game</span>
+        <span class="practise-title">{{ level.code }} · {{ level.title }}</span>
+        <span class="practise-brief">{{ level.brief }}</span>
+      </a>
+      {% endif %}
+
+      <nav class="pager" aria-label="Lessons">
+        {% if previous %}<a href="{{ url_for('lesson', slug=previous.slug) }}"><span class="dir">← Previous</span><span>{{ previous.title }}</span></a>{% endif %}
+        {% if following %}<a class="next" href="{{ url_for('lesson', slug=following.slug) }}"><span class="dir">Next →</span><span>{{ following.title }}</span></a>
+        {% else %}<a class="next" href="{{ url_for('learn') }}#compiler"><span class="dir">Next →</span><span>Inside the compiler</span></a>{% endif %}
+      </nav>
+    </div>
+  </article>
+
+  <aside class="side-stack" aria-label="Lessons">
+    <nav class="win" aria-labelledby="lessons-title">
+      <div class="win-bar">
+        <span class="win-handle" aria-hidden="true"></span>
+        <h2 class="win-title" id="lessons-title" data-hover-scramble>[Lessons]</h2>
+        <span class="win-btn" aria-hidden="true"></span>
+      </div>
+      <div class="win-body">
+        <ol class="index-list">
+          {% for l in lessons %}
+          <li><a href="{{ url_for('lesson', slug=l.slug) }}"{% if l.slug == lesson.slug %} aria-current="page"{% endif %}><span class="n">{{ "%02d" | format(loop.index) }}</span><span>{{ l.title }}</span><span class="meta"></span></a></li>
+          {% endfor %}
+        </ol>
+      </div>
+    </nav>
+    {% include "guide/_cheatsheet.html" %}
+  </aside>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='guide.js') }}"></script>
+{% endblock %}

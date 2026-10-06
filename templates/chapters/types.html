@@ -1,0 +1,133 @@
+{% extends "chapters/chapter.html" %}
+{% import "guide/_macros.html" as g %}
+
+{% block chapter %}
+<p>MiniLang has two kinds of value: numbers and lists. Many operations only make sense for one of them: you can't add 1 to a list, or take <code>len</code> of a number. The <em>type checker</em> works out which kind of value each name can hold, and rejects code that is certain to mix them up, before the program runs.</p>
+
+{{ g.h2("Static and dynamic typing") }}
+<p>A <em>statically typed</em> language, like Java or C, fixes each variable's type when you declare it, and the compiler rejects any program that might misuse one. A <em>dynamically typed</em> language, like Python or MiniLang, attaches types to values instead: a variable can hold a number now and a list later, and the check happens at runtime, when the operation actually runs:</p>
+
+{% call g.stage("output", stdin="1", expect="runtime") %}
+x = 1;
+print x + 1;
+x = [1, 2];
+print len(x);
+input pick;
+if pick { x = 5; }
+print len(x);
+{% endcall %}
+
+<p>Lines 1 to 4 are fine, because <code>x</code> legally changes type. Line 7 fails, but only when it runs, and only because the input was 1: change it to 0 and the program works. MiniLang stays dynamically typed, but its type checker adds a safety net on top. It proves, before anything runs, that certain lines <em>must</em> fail, and reports them all at once. It has no declarations to go on, so it <em>infers</em> every type from the code itself.</p>
+
+{{ g.h2("Types as sets") }}
+<p>At each point in the program, the checker tracks the <strong>set</strong> of types a name may hold. There are only four possible sets, and they form a small <em>lattice</em>:</p>
+
+<pre class="diagram">        <b>{number, list}</b>     could be either: no error is reported
+          /         \
+   <b>{number}</b>        <b>{list}</b>     known for sure
+          \         /
+             <b>{ }</b>             no value reaches here</pre>
+
+{{ g.source("typecheck.py", start='NUMBER, LIST = "number", "list"', end="NOTHING = frozenset()") }}
+
+<p>When two paths meet, a name's set is the <strong>union</strong> of what it could be on either path. If it's a number on one branch and a list on the other, afterwards it could be either:</p>
+
+{{ g.source("typecheck.py", "join") }}
+
+<p>Notice how this differs from definite assignment in the previous chapter, which used <em>intersection</em>. That analysis asked what is true on <em>every</em> path (a <em>must</em>-analysis); this one asks what is possible on <em>some</em> path (a <em>may</em>-analysis).</p>
+
+{{ g.h2("Inference as data flow") }}
+<p>The checker runs over the control-flow graph that the IR stage builds (chapter 5). For each block it computes the types on entry, by joining what flows in from every predecessor, then steps through the block's instructions. An assignment replaces the variable's type with the type of the new value. The blocks are revisited until nothing changes any more, which is a <em>fixed point</em>:</p>
+
+{{ g.source("typecheck.py", "Checker.flow") }}
+
+<p>The type of each new value follows from the instruction that makes it. Arithmetic and comparisons always produce numbers, a list literal produces a list, and reading <code>a[i]</code> produces whatever can be stored in lists:</p>
+
+{{ g.source("typecheck.py", "Checker.result") }}
+
+{% call g.stage("types") %}
+n = 5;
+xs = [1, 2, 3];
+size = len(xs);
+maybe = 1;
+if n > 3 {
+    maybe = xs;
+}
+{% endcall %}
+
+<p><code>maybe</code> is a number on one path and a list on the other, so the checker reports it as either.</p>
+
+{{ g.h2("Across functions") }}
+<p>A function's parameters have no types written down, so the checker gathers them from every call site: a parameter's type is the union of the argument types it's ever called with. A call's type is the union of everything the function can return. Since functions call each other, and even themselves, these facts feed one another, so the whole program is analysed again and again until nothing changes:</p>
+
+{{ g.source("typecheck.py", "Checker.contribute") }}
+{{ g.source("typecheck.py", "Checker.run") }}
+
+{% call g.stage("types") %}
+func first(xs) {
+    return xs[0];
+}
+func wrap(v) {
+    return [v];
+}
+func fact(n) {
+    if n <= 1 { return 1; }
+    return n * fact(n - 1);
+}
+print first(wrap(fact(4)));
+{% endcall %}
+
+<p><code>fact</code> is recursive, so its return type depends on itself. The fixed point settles it: the first round sees only <code>return 1</code> (a number); the next round sees that <code>n * fact(n - 1)</code> is a number too, and nothing changes after that.</p>
+
+{{ g.h2("Only certain errors") }}
+<p>Once the fixed point is reached, the checker looks at every operation once more. It reports an error <strong>only when an operand's set is exactly the wrong type</strong>: <code>{list}</code> where a number is needed, or <code>{number}</code> where a list is needed. If a value could be either, the line might work, so it is left for the VM to check at runtime. That way a program that could run correctly is never rejected:</p>
+
+{{ g.source("typecheck.py", "Checker.check", start='if op == "binop"', end="is a list\", line)") }}
+
+{% call g.stage("types", expect="type") %}
+xs = [1, 2];
+n = 7;
+print xs * 2;
+print n[0];
+if xs { print 1; }
+print len(n);
+{% endcall %}
+
+<p>All four mistakes are reported in one run, and each message names the culprit. Compare this program, where the checker can't be sure:</p>
+
+{% call g.stage("types") %}
+x = 1;
+input flag;
+if flag { x = [1]; }
+print x + 1;
+{% endcall %}
+
+<p>No type error: <code>x + 1</code> works whenever <code>flag</code> is 0. If it isn't, the VM still stops it at runtime.</p>
+
+{% call g.remember() %}
+<li>MiniLang is dynamically typed; the checker adds static checks without any declarations.</li>
+<li>Types are sets drawn from {number, list}; paths join by union, a may-analysis.</li>
+<li>Inference is a data-flow analysis over the control-flow graph, run to a fixed point.</li>
+<li>Parameter and return types come from every call and every <code>return</code>, across the whole program.</li>
+<li>Only certain errors are reported, so no correct program is ever rejected.</li>
+{% endcall %}
+
+{% call g.exercise("Certain or not?") %}
+<p>Which of these lines does the type checker reject, and which does it leave to runtime?</p>
+<pre class="code-inline">a = [1];
+b = 2;
+if b > 1 { b = a; }
+print a + 1;    # line 4
+print b + 1;    # line 5</pre>
+{% call g.answer() %}
+<p>Line 4 is rejected: <code>a</code> is always <code>{list}</code>. Line 5 isn't: after the <code>if</code>, <code>b</code> is <code>{number, list}</code>, and the checker doesn't evaluate <code>b &gt; 1</code>, so it can't be sure. At runtime <code>b &gt; 1</code> is true, so line 5 would fail in the VM, if line 4 hadn't stopped the program first.</p>
+{% endcall %}
+{% call g.stage("types", title="Check", expect="type") %}
+a = [1];
+b = 2;
+if b > 1 { b = a; }
+print a + 1;
+print b + 1;
+{% endcall %}
+{% endcall %}
+{% endblock %}

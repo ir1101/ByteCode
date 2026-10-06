@@ -1,0 +1,66 @@
+{% extends "guide/lesson.html" %}
+{% import "guide/_macros.html" as g %}
+
+{% block lesson %}
+<p>So far every program has worked on numbers written into its code. <code>input name;</code> instead reads the next whole number from the program's <em>input</em> and stores it in a variable, so the same program can work on different numbers each time it runs.</p>
+
+{% call g.example(stdin="20 22") %}
+input a;
+input b;
+print a + b;
+{% endcall %}
+
+<p>The <strong>Input</strong> box under the example holds the numbers. Change them and press Run. In the playground they go in the <strong>Input</strong> drawer under the editor, and on the command line you can type them as the program asks, or pass them with <code>--input "20 22"</code>.</p>
+
+<ul>
+  <li>Numbers are separated by spaces or new lines, and read in order.</li>
+  <li>Each <code>input</code> reads exactly one number. Extra numbers are simply left unread.</li>
+  <li>Reading when there's nothing left, or reading something that isn't a whole number, is a runtime error.</li>
+</ul>
+
+{% call g.example(stdin="7", expect="runtime") %}
+input a;
+input b;
+print a + b;
+{% endcall %}
+
+<h2>Reading until a stop value</h2>
+<p>When you don't know in advance how many numbers are coming, agree on a <em>sentinel</em>: a special value that means "that's all". Read one number before the loop, and the next one at the end of each pass:</p>
+
+{% call g.example(stdin="5 10 15 0") %}
+total = 0;
+count = 0;
+input x;
+while x != 0 {
+    total += x;
+    count += 1;
+    input x;
+}
+print count;
+print total;
+{% endcall %}
+
+<p>Another common pattern is to read how many numbers will follow first, and then loop that many times. You'll use it in the exercise.</p>
+
+{% call g.remember() %}
+<li><code>input n;</code> reads the next whole number into <code>n</code>.</li>
+<li>Numbers are separated by spaces or new lines, and running out is an error.</li>
+<li>For an unknown amount, read until a sentinel such as 0.</li>
+{% endcall %}
+
+{% call g.exercise("The biggest one") %}
+<p>The input starts with a count <code>n</code>, followed by <code>n</code> numbers. Print the biggest of those numbers. For the input <code>4 7 2 9 3</code> the answer is 9.</p>
+{% call g.hint() %}<p>Read <code>n</code>, then read the first number into <code>best</code>. Loop <code>n - 1</code> more times, reading a number each time and keeping it if it is bigger.</p>{% endcall %}
+{% call g.solution(stdin="4 7 2 9 3") %}
+input n;
+input best;
+for i = 1; i < n; i += 1 {
+    input x;
+    if x > best {
+        best = x;
+    }
+}
+print best;
+{% endcall %}
+{% endcall %}
+{% endblock %}

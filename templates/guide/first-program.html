@@ -1,0 +1,61 @@
+{% extends "guide/lesson.html" %}
+{% import "guide/_macros.html" as g %}
+
+{% block lesson %}
+<p>A MiniLang program is a list of <em>statements</em>, and the computer runs them one after another, from the top down. The simplest statement is <code>print</code>: it works out a value and shows it on its own line.</p>
+
+{% call g.example() %}
+print 42;
+print 6 * 7;
+print 100 - 58;
+{% endcall %}
+
+<p>Three statements, three lines of output. Notice that <code>print 6 * 7;</code> doesn't show the sum; it shows the <em>answer</em>. MiniLang works out the value first, then prints it.</p>
+
+<h2>Every statement ends with a semicolon</h2>
+<p>The <code>;</code> tells MiniLang where one statement stops and the next begins. Leaving one out is the most common mistake there is, so it's worth seeing what happens:</p>
+
+{% call g.example(expect="parse") %}
+print 1
+print 2;
+{% endcall %}
+
+<p>Nothing ran at all. Before running anything, MiniLang reads the whole program to check that it is written correctly, and it reports the line where the <code>;</code> was expected. Add the missing <code>;</code> at the end of line 1 and press Run.</p>
+
+<h2>Comments</h2>
+<p>Anything after a <code>#</code>, up to the end of the line, is a <em>comment</em>. MiniLang ignores it completely, so you can leave notes for yourself and for anyone who reads your code.</p>
+
+{% call g.example() %}
+# This whole line is a comment.
+print 1;   # a comment can also follow a statement
+# print 2;   this line does nothing: it is commented out
+print 3;
+{% endcall %}
+
+<p>Putting a <code>#</code> in front of a line is a handy way to switch it off without deleting it.</p>
+
+<h2>Only numbers, for now</h2>
+<p>MiniLang has no text strings: <code>print</code> shows numbers, and later lists of numbers. That keeps the language small, so its whole compiler fits in a few files you can read.</p>
+
+{% call g.remember() %}
+<li>A program runs from the top down, one statement at a time.</li>
+<li><code>print value;</code> shows one value on its own line.</li>
+<li>Every statement ends with <code>;</code>.</li>
+<li><code>#</code> starts a comment that runs to the end of the line.</li>
+{% endcall %}
+
+{% call g.exercise("Countdown") %}
+<p>Write a program that prints 3, 2, 1 and then 0, each on its own line. Add a comment at the top saying what it does.</p>
+{% call g.example(title="Your turn") %}
+# Countdown
+print 3;
+{% endcall %}
+{% call g.solution() %}
+# Countdown from 3 to 0
+print 3;
+print 2;
+print 1;
+print 0;
+{% endcall %}
+{% endcall %}
+{% endblock %}

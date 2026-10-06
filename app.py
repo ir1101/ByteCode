@@ -3,9 +3,13 @@
     GET  /               the landing page (templates/landing.html)
     GET  /play           the playground (templates/playground.html + static/app.js, game.js)
                          ?example=arrays.ml opens that example; #levels opens the level picker
-    GET  /learn          the learning section: one chapter per compiler stage (learn.py)
-    GET  /learn/<slug>   one chapter
-    POST /run    body {"source": "...", "stdin"?: "3 4", "level"?: "c1"}  ->  JSON with
+    GET  /learn          the learning section: lessons on the language (guide.py), then
+                         one chapter per compiler stage (learn.py)
+    GET  /learn/language/<slug>   one lesson; its examples run on the server as the page renders
+    GET  /learn/<slug>   one chapter on the compiler; quotes the real source and runs live demos
+    POST /stage  body {"source": "...", "view": "tokens", "stdin"?: "..."}  ->  what one stage of
+                 the pipeline makes of the code, as text (the chapters' demos call it)
+    POST /run    body {"source": "...", "stdin"?: "3 4", "level"?: "c1", "trace"?: false}  ->  JSON with
                  tokens, AST, bytecode, output and, if a stage failed, the errors with
                  their line numbers. "stdin" holds the numbers `input` statements read.
                  With "level", the code runs on that level's example test.
@@ -25,11 +29,13 @@ import os
 import re
 import socket
 
-from flask import Flask, abort, jsonify, render_template, request
+from flask import Flask, abort, jsonify, redirect, render_template, request, url_for
 from werkzeug.exceptions import HTTPException
 
 from api import lint, run_pipeline
-from learn import CHAPTERS, CHAPTERS_BY_SLUG, neighbours
+from guide import LESSONS, LESSONS_BY_SLUG, run_example as run_guide_example
+from guide import neighbours as lesson_neighbours
+from learn import CHAPTERS, CHAPTERS_BY_SLUG, VIEWS, excerpt, neighbours, slug, stage_view
 from levels import LEVELS, LEVELS_BY_ID, check_level, lint_level, public_levels, run_example
 from vm import BINARY_OPS
 
@@ -50,6 +56,10 @@ PROJECT = {
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 1_000_000  # reject request bodies over 1 MB
+app.jinja_env.globals["run_example"] = run_guide_example   # the lessons' example macro runs code with it
+app.jinja_env.globals.update(stage_view=stage_view, excerpt=excerpt)   # the chapters' demos and quotes
+app.jinja_env.filters["slug"] = slug
+app.jinja_env.globals["REPOSITORY"] = REPOSITORY
 
 
 def load_examples():
@@ -87,6 +97,7 @@ def project_stats():
         "max_stars": len(LEVELS) * 3,
         "examples": len(load_examples()),
         "chapters": len(CHAPTERS),
+        "lessons": len(LESSONS),
     }
 
 
@@ -105,7 +116,23 @@ def playground():
 
 @app.get("/learn")
 def learn():
-    return render_template("learn.html", chapters=CHAPTERS, project=PROJECT, section="learn")
+    return render_template("learn.html", chapters=CHAPTERS, lessons=LESSONS, project=PROJECT, section="learn")
+
+
+@app.get("/learn/language")
+def language():
+    return redirect(url_for("learn") + "#language")
+
+
+@app.get("/learn/language/<slug>")
+def lesson(slug):
+    found = LESSONS_BY_SLUG.get(slug)
+    if found is None:
+        abort(404, description=f"There is no lesson called {slug!r}.")
+    previous, following = lesson_neighbours(found)
+    return render_template(f"guide/{found.slug}.html", lesson=found, number=LESSONS.index(found) + 1,
+                           lessons=LESSONS, previous=previous, following=following,
+                           level=LEVELS_BY_ID.get(found.level), project=PROJECT, section="learn")
 
 
 @app.get("/learn/<slug>")
@@ -114,7 +141,9 @@ def chapter(slug):
     if found is None:
         abort(404, description=f"There is no chapter called {slug!r}.")
     previous, following = neighbours(found)
-    return render_template("chapter.html", chapter=found, number=CHAPTERS.index(found) + 1,
+    # A written chapter has its own template; otherwise its outline is shown.
+    template = f"chapters/{found.slug}.html" if found.written else "chapter.html"
+    return render_template(template, chapter=found, number=CHAPTERS.index(found) + 1,
                            previous=previous, following=following, chapters=CHAPTERS, project=PROJECT,
                            section="learn")
 
@@ -135,8 +164,20 @@ def run():
 
     # lexer -> parser -> semantic -> types -> compiler (+ optimizer) -> VM. Any MiniLang
     # error is caught inside run_pipeline and returned as result["errors"].
-    result = run_pipeline(body["source"], optimize=True, trace=True, stdin=body.get("stdin", ""))
+    result = run_pipeline(body["source"], optimize=True, trace=body.get("trace", True) is not False,
+                          stdin=body.get("stdin", ""))
     return jsonify(result)
+
+
+@app.post("/stage")
+def stage():
+    body = request.get_json(silent=True)
+    if (not isinstance(body, dict) or not isinstance(body.get("source"), str)
+            or body.get("view") not in VIEWS or not isinstance(body.get("stdin", ""), str)):
+        return bad_request('{"source": "print 1;", "view": "tokens"}')
+    if len(body["source"]) > 20_000:
+        return jsonify(error="a demo's code must be under 20,000 characters"), 400
+    return jsonify(stage_view(body["source"], body["view"], body.get("stdin", "")))
 
 
 @app.post("/check")

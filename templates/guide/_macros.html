@@ -1,0 +1,177 @@
+{# Building blocks for the language guide's lessons.
+
+   {% call g.example() %}print 1;{% endcall %}
+       A runnable example. It is compiled and run on the server when the page is
+       rendered, so the output shown is MiniLang's real output. On the page it can
+       be edited, run again, reset, or opened in the playground.
+       stdin="3 4"      numbers for input statements
+       expect="parse"   the example fails on purpose, at this stage (tests check it)
+       title="..."      the label on its title bar
+
+   {% call g.remember() %}<li>...</li>{% endcall %}     key points
+   {% call g.exercise("Title") %}...{% endcall %}       a task, usually with a hint and a solution
+   {% call g.solution() %}code{% endcall %}             a collapsed example with the answer
+#}
+
+{% set STAGES = {"lex": "Lexer error", "parse": "Parse error", "semantic": "Semantic error",
+                 "type": "Type error", "compile": "Compile error", "runtime": "Runtime error",
+                 "input": "Input error"} %}
+
+{% macro result(r, expect) -%}
+  {% if r.errors %}
+  <div class="ex-error">
+    <p class="ex-label">{{ STAGES.get(r.errors[0].stage, "Error") }}{% if r.errors | length > 1 %}s · {{ r.errors | length }}{% endif %}{% if expect %} <span class="ex-purpose">on purpose</span>{% endif %}</p>
+    <ul class="ex-messages">
+      {% for e in r.errors %}<li>{% if e.line %}<span class="ex-line">line {{ e.line }}</span>{% endif %}<span>{{ e.message }}</span></li>{% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+  {% if r.output or not r.errors %}
+  <p class="ex-label">Output</p>
+  <pre class="ex-out">{% if r.output %}{{ r.output_text }}{% else %}<span class="ex-none">nothing was printed</span>{% endif %}</pre>
+  {% endif %}
+  {% if r.warnings %}
+  <ul class="ex-warnings">
+    {% for w in r.warnings %}<li><span class="ex-line">line {{ w.line }}</span><span>Warning: {{ w.message }}</span></li>{% endfor %}
+  </ul>
+  {% endif %}
+{%- endmacro %}
+
+{% macro example_block(code, stdin="", expect="", title="Example") -%}
+{% set r = run_example(code, stdin) %}
+<figure class="ex"{% if expect %} data-expect="{{ expect }}"{% endif %}>
+  <div class="ex-bar">
+    <span class="win-handle" aria-hidden="true"></span>
+    <figcaption class="ex-title">[{{ title }}]</figcaption>
+    <div class="ex-actions">
+      <button type="button" class="ex-btn is-run" data-run>Run</button>
+      <button type="button" class="ex-btn" data-reset hidden>Reset</button>
+      <a class="ex-btn" data-open href="{{ url_for('playground', code=r.code, stdin=r.stdin or None) }}">Playground<span aria-hidden="true"> ↗</span></a>
+    </div>
+  </div>
+  <div class="ex-editor">
+    <pre class="ex-hl" aria-hidden="true"></pre>
+    <textarea class="ex-code" spellcheck="false" autocapitalize="off" autocomplete="off" wrap="off"
+              rows="{{ r.lines }}" aria-label="{{ title }}: MiniLang code you can edit. Ctrl+Enter runs it.">{{ r.code }}</textarea>
+  </div>
+  {% if r.stdin %}
+  <label class="ex-stdin"><span>Input</span><input type="text" value="{{ r.stdin }}" spellcheck="false" autocomplete="off"></label>
+  {% endif %}
+  <div class="ex-result" aria-live="polite">{{ result(r, expect) }}</div>
+</figure>
+{%- endmacro %}
+
+{% macro example(stdin="", expect="", title="Example") -%}
+{{ example_block(caller(), stdin, expect, title) }}
+{%- endmacro %}
+
+{% macro remember() -%}
+<aside class="remember" aria-label="Remember">
+  <p class="remember-title">[Remember]</p>
+  <ul>{{ caller() }}</ul>
+</aside>
+{%- endmacro %}
+
+{% macro exercise(title) -%}
+<section class="exercise" aria-label="Exercise: {{ title }}">
+  <p class="exercise-title"><span class="chip is-accent">Your turn</span><span>{{ title }}</span></p>
+  {{ caller() }}
+</section>
+{%- endmacro %}
+
+{% macro solution(stdin="") -%}
+<details class="reveal">
+  <summary>Show a solution</summary>
+  {{ example_block(caller(), stdin, "", "Solution") }}
+</details>
+{%- endmacro %}
+
+{% macro hint() -%}
+<details class="reveal">
+  <summary>Hint</summary>
+  <div class="reveal-body">{{ caller() }}</div>
+</details>
+{%- endmacro %}
+
+{# ------------------------------------------------ for the compiler chapters #}
+
+{% macro stage_result(r, expect) -%}
+  {% if r.errors %}
+  <div class="ex-error">
+    <p class="ex-label">{{ STAGES.get(r.errors[0].stage, "Error") }}{% if r.errors | length > 1 %}s · {{ r.errors | length }}{% endif %}{% if expect %} <span class="ex-purpose">on purpose</span>{% endif %}</p>
+    <ul class="ex-messages">
+      {% for e in r.errors %}<li>{% if e.line %}<span class="ex-line">line {{ e.line }}</span>{% endif %}<span>{{ e.message }}</span></li>{% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+  {% if r.text or not r.errors %}
+  <p class="ex-label">{{ r.label }}</p>
+  <pre class="ex-out ex-stage-out">{% if r.text %}{{ r.text }}{% else %}<span class="ex-none">nothing</span>{% endif %}</pre>
+  {% endif %}
+  {% if r.warnings %}
+  <ul class="ex-warnings">
+    {% for w in r.warnings %}<li><span class="ex-line">line {{ w.line }}</span><span>Warning: {{ w.message }}</span></li>{% endfor %}
+  </ul>
+  {% endif %}
+{%- endmacro %}
+
+{% set PLAYGROUND_TAB = {"tokens": "tokens", "ast": "ast", "symbols": "symbols", "types": "symbols", "ir": "ir",
+                         "constants": "ir", "bytecode": "bytecode", "optimized": "bytecode", "trace": "output",
+                         "output": "output"} %}
+
+{% macro stage_block(code, view, stdin="", expect="", title="Try it") -%}
+{% set r = stage_view(code, view, stdin) %}
+<figure class="ex is-stage" data-view="{{ view }}"{% if expect %} data-expect="{{ expect }}"{% endif %}>
+  <div class="ex-bar">
+    <span class="win-handle" aria-hidden="true"></span>
+    <figcaption class="ex-title">[{{ title }} · {{ r.label }}]</figcaption>
+    <div class="ex-actions">
+      <button type="button" class="ex-btn is-run" data-run>Run</button>
+      <button type="button" class="ex-btn" data-reset hidden>Reset</button>
+      <a class="ex-btn" data-open data-tab="{{ PLAYGROUND_TAB[view] }}" href="{{ url_for('playground', code=r.code, stdin=r.stdin or None, tab=PLAYGROUND_TAB[view]) }}">Playground<span aria-hidden="true"> ↗</span></a>
+    </div>
+  </div>
+  <div class="ex-editor">
+    <pre class="ex-hl" aria-hidden="true"></pre>
+    <textarea class="ex-code" spellcheck="false" autocapitalize="off" autocomplete="off" wrap="off"
+              rows="{{ r.lines }}" aria-label="{{ title }}: MiniLang code you can edit. Ctrl+Enter shows the {{ r.label | lower }} again.">{{ r.code }}</textarea>
+  </div>
+  {% if r.stdin %}
+  <label class="ex-stdin"><span>Input</span><input type="text" value="{{ r.stdin }}" spellcheck="false" autocomplete="off"></label>
+  {% endif %}
+  <div class="ex-result" aria-live="polite">{{ stage_result(r, expect) }}</div>
+</figure>
+{%- endmacro %}
+
+{# {% call g.stage("tokens") %}x = 1;{% endcall %}: what one stage makes of a snippet #}
+{% macro stage(view, stdin="", expect="", title="Try it") -%}
+{{ stage_block(caller(), view, stdin, expect, title) }}
+{%- endmacro %}
+
+{# {{ g.source("lexer.py", "Lexer.read_word") }}: a quote from the real source file #}
+{% macro source(path, qualname=None, start=None, end=None, note=None) -%}
+{% set e = excerpt(path, qualname, start, end) %}
+<figure class="src">
+  <figcaption class="src-bar">
+    <span class="src-file">{{ e.path }}</span>
+    {% if e.qualname %}<span class="src-name">{{ e.qualname }}</span>{% endif %}
+    <a class="src-lines" href="{{ REPOSITORY }}/blob/main/{{ e.path }}#L{{ e.first }}-L{{ e.last }}" rel="noopener" data-cursor-label="GitHub">lines {{ e.first }}–{{ e.last }}<span aria-hidden="true"> ↗</span></a>
+  </figcaption>
+  <div class="src-body">
+    <pre class="src-gutter" aria-hidden="true">{{ e.gutter }}</pre>
+    <pre class="src-code"><code>{{ e.html }}</code></pre>
+  </div>
+  {% if note %}<p class="src-note">{{ note }}</p>{% endif %}
+</figure>
+{%- endmacro %}
+
+{% macro answer(label="Show the answer") -%}
+<details class="reveal">
+  <summary>{{ label }}</summary>
+  <div class="reveal-body">{{ caller() }}</div>
+</details>
+{%- endmacro %}
+
+{% macro h2(title) -%}
+<h2 id="{{ title | slug }}">{{ title }}</h2>
+{%- endmacro %}

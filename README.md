@@ -42,11 +42,14 @@ The web playground needs Flask once: `python -m pip install flask`.
 | Page | What it is |
 |---|---|
 | `/` | the landing page |
-| `/play` | the playground; `?example=arrays.ml&tab=ir` opens, runs and shows an example, and `#levels` opens the level picker |
-| `/learn` | the learning section: one chapter per stage of the compiler |
+| `/play` | the playground; `?example=arrays.ml&tab=ir` opens, runs and shows an example, `?code=...&stdin=...` opens any code, `#levels` opens the level picker and `#level=c1` starts a level |
+| `/learn` | the learning section: lessons on the language, then one chapter per stage of the compiler |
+| `/learn/language/<lesson>` | one lesson, e.g. `/learn/language/functions` |
 | `/learn/<chapter>` | one chapter, e.g. `/learn/parser` |
 
 **The look.** The site is styled as a dark "desktop", inspired by matteocourquin.com: a charcoal background with a faint grid, windows with bracketed uppercase titles such as `[PIPELINE/LIST]`, pill tags, small system-monitor readouts, big blackletter display type (Grenze Gotisch), and one electric-violet accent. Labels use Space Grotesk and code uses JetBrains Mono. Green only ever means success and red an error. The shared tokens and components live in `static/theme.css`, so all three parts match.
+
+**Cursor and hover** (`static/fx.js`). The pointer gets four violet corner brackets that glide after it and snap to frame whatever button or link it is over, sometimes with a label such as *Chapter* or *Drag*. On the landing and learning pages it also leaves a trail: small squares stamped with their x / y position, joined to the pointer by a dashed line. Hovering a window brings up crop marks at its corners; link labels and window titles scramble through random glyphs and settle; buttons fill white as their arrow flies out and back in. The playground keeps just the framing brackets, so nothing gets in the way of editing. All of this is for a mouse or trackpad only, is hidden from screen readers, and turns off with reduced motion.
 
 **The landing page** is built on real data:
 - A **boot screen** runs a power-on self test: it compiles and runs `print 6 * 7;` through `/run`, and each stage reports what it actually produced. It shows once per browser session; any key skips it, and **B** reboots it.
@@ -73,11 +76,13 @@ Hovering a row in any tab highlights its source line. Errors appear in a red box
 
 | File | Role |
 |---|---|
-| `app.py` | the pages above; `POST /run` with `{"source": "...", "stdin": "3 4"}` returns the JSON described below; `POST /lint` returns `{"errors": [...], "warnings": [...]}` without compiling or running |
-| `learn.py` | the chapters of the learning section |
+| `app.py` | the pages above; `POST /run` with `{"source": "...", "stdin": "3 4"}` returns the JSON described below; `POST /lint` returns `{"errors": [...], "warnings": [...]}` without compiling or running; `POST /stage` with `{"source": "...", "view": "tokens"}` returns what one stage makes of the code, for the chapters' demos |
+| `guide.py`, `templates/guide/`, `static/guide.js` | the language lessons, the macros for runnable examples, and the in-page editor |
+| `learn.py`, `templates/chapters/` | the compiler chapters: their topics, source quotes and stage demos |
 | `templates/` | `site_base.html` (header and footer for the landing and learning pages), `landing.html`, `learn.html`, `chapter.html`, `not_found.html`, `playground.html` |
 | `static/theme.css` | the shared theme: colours, fonts, grid background, windows, pills, readouts |
 | `static/site.css`, `static/landing.js` | the landing and learning pages; the boot screen, windows and stack machine |
+| `static/fx.js` | the cursor brackets, the trail and hover scrambling, on every page |
 | `static/style.css`, `static/app.js` | the playground's layout and rendering; the browser never compiles anything itself |
 | `static/game.js` | levels, stars, XP, achievements and toasts (see [Game mode](#game-mode)) |
 
@@ -385,9 +390,49 @@ Semantic analysis runs on the original tree before any of this, so `0 and missin
 
 ## Learning section
 
-`/learn` has one chapter per stage of the compiler: lexing, parsing, semantic analysis, type checking, intermediate code and data flow, optimization, code generation and the stack machine. Each chapter lists its topics, the source file it walks through, and a button that opens a matching example in the playground on the right tab.
+`/learn` has two tracks.
 
-The chapters are outlines for now; **writing the lessons is the next step**. They are data in `learn.py`: give a chapter `lessons` and its page renders them in place of the outline, and its status changes from *Outline* to *Ready* on the cards and the landing page.
+**Track 1: Learn MiniLang** teaches the language itself, in twelve short lessons:
+
+| # | Lesson | # | Lesson |
+|---|---|---|---|
+| 1 | Your first program: `print`, `;`, comments | 7 | `for` loops, `break` and `continue` |
+| 2 | Numbers and arithmetic | 8 | Functions, recursion and scope |
+| 3 | Variables and `+=` | 9 | Lists |
+| 4 | Comparisons and logic | 10 | Reading input |
+| 5 | Making decisions with `if` | 11 | Reading error messages |
+| 6 | Repeating with `while` | 12 | Putting it together |
+
+Each lesson explains one idea with several examples, sums it up in a *Remember* box, and ends with an exercise that has a hint and a solution, plus a link to a level in the game to practise on. **Every example is real.** It is compiled and run through the whole pipeline when the page is rendered, so the output a lesson shows is MiniLang's actual output. On the page the example is an editor with syntax colours: change the code and press **Run** (or Ctrl+Enter), **Reset** it, or open it in the playground. Some examples fail on purpose to show an error; they are marked, and a test checks that each one fails at exactly the stage its lesson is about, and that every other example runs cleanly.
+
+To add a lesson, add it to `LESSONS` in `guide.py` and write `templates/guide/<slug>.html`, using the macros in `templates/guide/_macros.html`:
+
+```jinja
+{% call g.example() %}
+print 6 * 7;
+{% endcall %}
+
+{% call g.example(stdin="3 4", expect="runtime") %}...{% endcall %}
+```
+
+**Track 2: Inside the compiler** explains how MiniLang's own compiler works, one chapter per stage:
+
+| # | Chapter | Covers |
+|---|---|---|
+| 1 | Lexing | tokens, one character of lookahead, keywords vs names, longest match, line numbers, recovering from bad characters |
+| 2 | Parsing | grammars, recursive descent, precedence by layering, the syntax tree, desugaring `+=`, phrase-level and panic-mode recovery |
+| 3 | Semantic analysis | symbol tables and scope, two passes, definite assignment, warnings, "did you mean" |
+| 4 | Type checking | static vs dynamic typing, types as sets, inference as data flow, interprocedural fixed points, certain errors only |
+| 5 | Intermediate code and data flow | three-address code, basic blocks, the control-flow graph, constant propagation, liveness |
+| 6 | Optimization | folding, dead-store elimination, peephole passes, tail calls, and testing that behaviour never changes |
+| 7 | Code generation | stack code from a tree, back-patching, short-circuit `and` / `or`, functions and the bytecode layout |
+| 8 | The stack machine | fetch-decode-execute, the operand stack, frames and the call stack, runtime limits, tracing |
+
+Each chapter teaches from the real thing, in two ways:
+- **Source quotes are pulled from the actual files** when the page renders. `{{ g.source("lexer.py", "Lexer.read_word") }}` finds that method with Python's `ast` module and shows it with line numbers, syntax colours and a link to those lines on GitHub. A `start`/`end` pair quotes part of a long function. A quote that no longer matches the code raises an error, so a test fails instead of the page going stale.
+- **Stage demos** (`{% call g.stage("tokens") %}…{% endcall %}`) run a MiniLang snippet through the pipeline up to one stage and show what it produced. The views are `tokens`, `ast`, `symbols`, `types`, `ir`, `constants`, `bytecode`, `optimized`, `trace` and `output`, the same text `main.py --debug` and `--trace` print. On the page every demo can be edited and run again (through `POST /stage`), or opened in the playground on the matching tab.
+
+The chapter pages also show where the stage sits in the pipeline and a contents list of their sections. Tests check that every topic has its section, every quote points at real lines, and every demo does what the chapter says, including failing at exactly the stage it claims.
 
 ## Project layout
 
@@ -406,10 +451,10 @@ The chapters are outlines for now; **writing the lessons is the next step**. The
 | `main.py` | command-line driver (`--debug`, `--trace`, `--no-opt`, `--input`) |
 | `api.py` | runs the whole pipeline and returns JSON-ready data; `lint()` runs only the static checks |
 | `app.py` | Flask website: the landing page, playground and learning section, plus `/run`, `/check` and `/lint` |
-| `learn.py` | the learning section's chapters |
+| `learn.py` | the learning section's chapters, source quoting and stage demos |
 | `levels.py` | game levels, the test harness and star scoring |
 | `templates/`, `static/` | the pages, the shared theme and the scripts (see [Website](#website-apppy)) |
-| `tests/` | 308 unit tests: every stage, error recovery and hints, semantic analysis, type checking, input, the IR and its analyses, the optimizer (including same-behaviour checks), tail calls, arrays, the API, the levels and the website |
+| `tests/` | 338 unit tests: every stage, error recovery and hints, semantic analysis, type checking, input, the IR and its analyses, the optimizer (including same-behaviour checks), tail calls, arrays, the API, the levels, the website, every example in the language lessons, and every quote and demo in the compiler chapters |
 | `examples/` | `demo.ml`, `optimize.ml`, `functions.ml` (recursion, for, break/continue), `arrays.ml` (lists, `%`, a sieve), `dataflow.ml` (liveness, dead stores, `+=`, tail calls) |
 | `.github/workflows/tests.yml` | GitHub Actions: runs the test suite on every push |
 | `requirements.txt` | Flask, the only dependency (for the web playground) |

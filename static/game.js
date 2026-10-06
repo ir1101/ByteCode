@@ -626,5 +626,11 @@
   ML.on("step-back", () => withRankWatch(() => unlock("rewind")));
 
   updateHud();
-  if (location.hash === "#levels") openLevels();   // the landing page's Levels links
+  // Links from other pages: #levels opens the picker, #level=c1 starts that level if it is unlocked.
+  const wantedLevel = /^#level=(\w+)$/.exec(location.hash);
+  if (location.hash === "#levels") openLevels();
+  else if (wantedLevel && BY_ID[wantedLevel[1]]) {
+    if (isUnlocked(wantedLevel[1])) enterLevel(wantedLevel[1]);
+    else openLevels();
+  }
 })();

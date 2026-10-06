@@ -39,6 +39,7 @@
   const GLYPHS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789#%&*+=/<>{}";
 
   function scramble(el, duration = 700) {
+    if (el.dataset.scrambleReady && window.FX) return window.FX.scramble(el);
     if (reduceMotion || el.childElementCount) return;
     const text = el.dataset.text || (el.dataset.text = el.textContent);
     const start = performance.now();
@@ -58,11 +59,6 @@
 
   function scrambleAll() {
     $$("[data-scramble]").forEach((el, i) => setTimeout(() => scramble(el, el.tagName === "P" ? 1100 : 600), i * 70));
-  }
-
-  for (const link of $$(".index-list a")) {
-    const label = $("[data-scramble-hover]", link);
-    if (label) link.addEventListener("mouseenter", () => scramble(label, 320));
   }
 
   // --------------------------------------------------------------- windows
@@ -85,7 +81,8 @@
   function setCollapsed(win, collapsed) {
     const button = $(".win-btn[aria-controls]", win);
     if (!button) return;
-    const title = $(".win-title", win).dataset.text || $(".win-title", win).textContent;
+    const heading = $(".win-title", win);
+    const title = ($(".visually-hidden", heading) || heading).textContent;
     win.classList.toggle("is-collapsed", collapsed);
     button.setAttribute("aria-expanded", String(!collapsed));
     button.setAttribute("aria-label", `${collapsed ? "Expand" : "Collapse"} ${title.replace(/[[\]]/g, "")}`);
@@ -276,6 +273,7 @@
     if (machine.playing) machine.timer = setTimeout(tick, STEP_MS);
     vmToggle.setAttribute("aria-pressed", String(!machine.playing));
     vmToggle.setAttribute("aria-label", machine.playing ? "Pause the machine" : "Play the machine");
+    vmToggle.dataset.cursorLabel = machine.playing ? "Pause" : "Play";
     $("#vm-toggle-icon").textContent = machine.playing ? "❚❚" : "▶";
   }
 

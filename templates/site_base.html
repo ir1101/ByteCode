@@ -12,19 +12,19 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='theme.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='site.css') }}">
 </head>
-<body class="{% block body_class %}{% endblock %}">
+<body class="{% block body_class %}{% endblock %}" data-cursor="full">
 <a class="skip-link" href="#main">Skip to content</a>
 <div class="site">
   <header class="site-top">
     <nav class="site-pills" aria-label="MiniLang">
-      <a class="pill pill-solid" href="{{ url_for('landing') }}">MiniLang</a>
+      <a class="pill pill-solid" href="{{ url_for('landing') }}" data-hover-scramble>MiniLang</a>
       <span class="pill site-tag">Bytecode compiler</span>
       <span class="pill site-tag">{{ project.course }}</span>
     </nav>
     <nav class="site-nav" aria-label="Sections">
-      <a class="pill" href="{{ url_for('playground') }}">Playground</a>
-      <a class="pill" href="{{ url_for('learn') }}"{% if section == 'learn' %} aria-current="page"{% endif %}>Learn</a>
-      <a class="pill" href="{{ url_for('playground') }}#levels">Levels</a>
+      <a class="pill" href="{{ url_for('playground') }}" data-hover-scramble>Playground</a>
+      <a class="pill" href="{{ url_for('learn') }}"{% if section == 'learn' %} aria-current="page"{% endif %} data-hover-scramble>Learn</a>
+      <a class="pill" href="{{ url_for('playground') }}#levels" data-hover-scramble>Levels</a>
     </nav>
   </header>
 
@@ -34,15 +34,16 @@
 
   <footer class="site-foot">
     <nav class="foot-links" aria-label="Open">
-      <a class="link-btn is-primary" href="{{ url_for('playground') }}"><span>Playground</span><span class="arrow" aria-hidden="true">↗</span></a>
-      <a class="link-btn" href="{{ url_for('learn') }}"><span>Learn</span><span class="arrow" aria-hidden="true">↗</span></a>
-      <a class="link-btn" href="{{ project.repository }}" rel="noopener"><span>GitHub</span><span class="arrow" aria-hidden="true">↗</span></a>
+      <a class="link-btn is-primary" href="{{ url_for('playground') }}"><span data-hover-scramble>Playground</span><span class="arrow" aria-hidden="true"><b>↗</b></span></a>
+      <a class="link-btn" href="{{ url_for('learn') }}"><span data-hover-scramble>Learn</span><span class="arrow" aria-hidden="true"><b>↗</b></span></a>
+      <a class="link-btn" href="{{ project.repository }}" rel="noopener"><span data-hover-scramble>GitHub</span><span class="arrow" aria-hidden="true"><b>↗</b></span></a>
     </nav>
     <p class="foot-credit">Built by
       {% for name, _ in project.team %}<strong>{{ name }}</strong>{% if not loop.last %}, {% endif %}{% endfor %}
       · {{ project.course }}</p>
   </footer>
 </div>
+<script src="{{ url_for('static', filename='fx.js') }}"></script>
 {% block scripts %}{% endblock %}
 </body>
 </html>

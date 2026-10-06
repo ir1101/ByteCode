@@ -1,0 +1,93 @@
+{% extends "guide/lesson.html" %}
+{% import "guide/_macros.html" as g %}
+
+{% block lesson %}
+<p>You now know all of MiniLang. Here is a complete program that uses most of it: a function, loops, an early <code>return</code> and a list. It finds every prime number up to 50. A prime has exactly two divisors, 1 and itself.</p>
+
+{% call g.example(title="Primes up to 50") %}
+# Is n prime? Try every divisor d with d * d <= n.
+func is_prime(n) {
+    if n < 2 {
+        return 0;
+    }
+    for d = 2; d * d <= n; d += 1 {
+        if n % d == 0 {
+            return 0;        # found a divisor: not prime
+        }
+    }
+    return 1;
+}
+
+primes = [];
+for n = 1; n <= 50; n += 1 {
+    if is_prime(n) {
+        append(primes, n);
+    }
+}
+print primes;
+print len(primes);
+{% endcall %}
+
+<h2>How to read it</h2>
+<ol>
+  <li><code>is_prime</code> answers one small question, so the main loop reads almost like English: "if n is prime, add it to the list".</li>
+  <li>It only tries divisors up to the square root (<code>d * d &lt;= n</code>): if <code>n</code> had a bigger divisor, it would also have a smaller partner, which was already tried.</li>
+  <li><code>return 0;</code> inside the loop stops as soon as a divisor turns up, with no need for <code>break</code>.</li>
+  <li><code>if is_prime(n)</code> works because 1 counts as true.</li>
+</ol>
+
+<h2>Sorting a list</h2>
+<p>One more classic: <em>insertion sort</em> puts a list in order. It takes each item in turn and slides it left past every bigger item before it, like sorting cards in your hand.</p>
+
+{% call g.example(title="Insertion sort") %}
+xs = [5, 2, 9, 1, 7];
+for i = 1; i < len(xs); i += 1 {
+    key = xs[i];
+    j = i - 1;
+    while j >= 0 and xs[j] > key {
+        xs[j + 1] = xs[j];
+        j -= 1;
+    }
+    xs[j + 1] = key;
+}
+print xs;
+{% endcall %}
+
+<p>Notice <code>j &gt;= 0 and xs[j] &gt; key</code>: because <code>and</code> stops early, <code>xs[j]</code> is never read when <code>j</code> has run off the front of the list.</p>
+
+{% call g.remember() %}
+<li>Split a program into small functions that each answer one question.</li>
+<li>Return early as soon as the answer is known.</li>
+<li>Lean on <code>and</code> stopping early to guard a read that could fail.</li>
+<li>Test with small inputs first, and step through anything surprising in the playground.</li>
+{% endcall %}
+
+<h2>Where to go next</h2>
+<ul>
+  <li><strong>Play the levels.</strong> Thirteen challenges and eight bug hunts in the playground use everything from these lessons, and give extra stars for small and fast code.</li>
+  <li><strong>Watch your programs compile.</strong> Open any example in the playground and look through the tabs: tokens, syntax tree, symbols, the control-flow graph, bytecode, and a step-by-step run of the machine.</li>
+  <li><strong>Learn how the compiler works.</strong> The second part of the learning section walks through each stage of MiniLang's own compiler.</li>
+</ul>
+
+{% call g.exercise("Perfect numbers") %}
+<p>A number is <em>perfect</em> when it equals the sum of its divisors smaller than itself: 6 = 1 + 2 + 3. Write a function <code>divisor_sum(n)</code> and use it to print every perfect number below 100. There are two.</p>
+{% call g.hint() %}<p>In <code>divisor_sum</code>, loop <code>d</code> from 1 to <code>n / 2</code> (no divisor smaller than <code>n</code> is bigger than that) and add up every <code>d</code> with <code>n % d == 0</code>. Then loop <code>n</code> from 2 to 99 and print <code>n</code> when <code>divisor_sum(n) == n</code>.</p>{% endcall %}
+{% call g.solution() %}
+func divisor_sum(n) {
+    total = 0;
+    for d = 1; d <= n / 2; d += 1 {
+        if n % d == 0 {
+            total += d;
+        }
+    }
+    return total;
+}
+
+for n = 2; n < 100; n += 1 {
+    if divisor_sum(n) == n {
+        print n;
+    }
+}
+{% endcall %}
+{% endcall %}
+{% endblock %}

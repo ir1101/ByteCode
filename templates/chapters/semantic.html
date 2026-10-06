@@ -1,0 +1,139 @@
+{% extends "chapters/chapter.html" %}
+{% import "guide/_macros.html" as g %}
+
+{% block chapter %}
+<p>The parser only checks <em>shape</em>. <code>print total;</code> is perfectly good grammar even if <code>total</code> is never defined, and so is calling a function with the wrong number of values. <em>Semantic analysis</em> checks <em>meaning</em>: does every name refer to something, and is everything used sensibly? It walks the syntax tree before any code is generated, so these mistakes are caught before anything runs.</p>
+
+{{ g.h2("Symbol tables and scope") }}
+<p>To know what a name refers to, the analyser keeps <em>symbol tables</em>: one for the global scope, and one for each function. A table maps each name to a <code>Symbol</code> recording what kind of name it is and every line that assigns or reads it.</p>
+
+{{ g.source("semantic.py", "Symbol") }}
+
+{% call g.stage("symbols") %}
+rate = 3;
+func cost(items) {
+    total = items * rate;
+    return total;
+}
+print cost(4);
+{% endcall %}
+
+<p>The tables follow MiniLang's <em>scope rule</em>, which is worth knowing exactly:</p>
+<ul>
+  <li>Inside a function, the parameters and every name the function <em>assigns</em> are <strong>locals</strong>. Each call gets fresh copies.</li>
+  <li>Any other name a function reads, like <code>rate</code> above, is looked up in the <strong>globals</strong>.</li>
+  <li>A function never sees the locals of the function that called it.</li>
+</ul>
+
+{{ g.h2("Two passes") }}
+<p>A function can be called before its definition appears, and two functions can call each other. So the analyser can't simply read from top to bottom. It makes two passes over the tree:</p>
+<ol>
+  <li><strong>Declarations:</strong> collect every function and its parameters, and every name that each scope assigns. After this pass, the tables are complete.</li>
+  <li><strong>Uses:</strong> walk the code in order, and resolve each name and call against the finished tables.</li>
+</ol>
+
+{{ g.source("semantic.py", "Analyzer.run", start="for stmt in program.statements:", end="fn.symbols[name].assigned.append(line)") }}
+
+{% call g.stage("symbols") %}
+print is_even(10);
+func is_even(n) {
+    if n == 0 { return 1; }
+    return is_odd(n - 1);
+}
+func is_odd(n) {
+    if n == 0 { return 0; }
+    return is_even(n - 1);
+}
+{% endcall %}
+
+<p>The call on line 1 comes before either definition, and the two functions call each other. Both are fine, because pass 1 has seen everything before pass 2 checks anything.</p>
+
+{{ g.h2("Definite assignment") }}
+<p>A name can exist and still have no value yet, depending on which way the program went. To spot this, pass 2 carries a set of the names that are <em>definitely assigned</em> at each point. Assignments add to the set. Where two paths join, only names assigned on <strong>both</strong> paths survive, so the meet is set intersection:</p>
+
+{{ g.source("semantic.py", "meet") }}
+{{ g.source("semantic.py", "Analyzer.stmt", start="if isinstance(node, If):", end="return assigned        # the body may run zero times") }}
+
+<p>A loop body might run zero times, so whatever it assigns doesn't count after the loop. And <code>None</code> means "this path never reaches here" (it ended in <code>return</code> or <code>break</code>), so it drops out of the meet entirely. This kind of analysis is a <em>must</em>-analysis: a fact holds only if it holds on every path.</p>
+
+{% call g.stage("symbols") %}
+n = 4;
+if n > 2 {
+    big = 1;
+}
+print big;
+{% endcall %}
+
+<p><code>big</code> exists, because line 3 assigns it, so this isn't an error. But on the path where <code>n &gt; 2</code> is false it has no value yet, hence the warning.</p>
+
+{{ g.h2("Warnings") }}
+<p>Errors stop the program. <em>Warnings</em> let it run, but point at code that is probably a mistake:</p>
+<table class="table">
+  <thead><tr><th scope="col">Warning</th><th scope="col">Means</th></tr></thead>
+  <tbody>
+    <tr><td>may be unassigned</td><td>on some path, the name has no value yet where it's read</td></tr>
+    <tr><td>scope trap</td><td>a function reads a global, then assigns the same name, which makes a separate local</td></tr>
+    <tr><td>unreachable</td><td>code after <code>return</code>, <code>break</code> or <code>continue</code> in the same block</td></tr>
+    <tr><td>unused</td><td>a variable, parameter or function that nothing reads or calls</td></tr>
+    <tr><td>dead store</td><td>a value overwritten before anything reads it (found by liveness analysis, chapter 5)</td></tr>
+  </tbody>
+</table>
+
+<p>The scope trap deserves its own look, because it's the one that surprises people most. Reading a local before the function assigns it falls back to the global, but the assignment then creates a local, so the global never changes:</p>
+
+{{ g.source("semantic.py", "Analyzer.read", start="if fn is not None and name in fn.symbols:", end='self.result.warn(line, "maybe-unassigned"') }}
+
+{% call g.stage("symbols") %}
+count = 0;
+func bump() {
+    count = count + 1;
+    return count;
+    print 99;
+}
+spare = 5;
+print bump();
+{% endcall %}
+
+{{ g.h2("Did you mean") }}
+<p>An undefined name is usually a typo. So when the analyser can't resolve a name, it compares it with every name it does know, using Python's <code>difflib</code>, and suggests the closest one if it's similar enough. It also knows the habits people bring from other languages, such as <code>true</code>:</p>
+
+{{ g.source("semantic.py", "did_you_mean") }}
+
+<p>Errors don't stop the walk either. Each one is recorded with <code>self.error(…)</code>, and the analyser carries on, so a single run reports every undefined name and every bad call:</p>
+
+{% call g.stage("symbols", expect="semantic") %}
+count = 0;
+func average(a, b) {
+    return (a + b) / 2;
+}
+print cout;
+print avrage(4, 8);
+print average(4);
+done = true;
+{% endcall %}
+
+{% call g.remember() %}
+<li>Semantic analysis checks meaning: every name resolves, every call fits.</li>
+<li>Symbol tables hold globals, and each function's parameters and locals.</li>
+<li>Two passes: declare everything first, then check uses, so order doesn't matter.</li>
+<li>Definite assignment is a must-analysis: at a join, keep only what both paths assigned.</li>
+<li>Errors are collected, not raised one at a time, and typos get suggestions.</li>
+{% endcall %}
+
+{% call g.exercise("Spot the warnings") %}
+<p>Before running it, predict which warnings this program gets, and on which lines.</p>
+{% call g.stage("symbols", title="Your turn") %}
+total = 0;
+func add_all(n) {
+    for i = 1; i <= n; i += 1 {
+        total += i;
+    }
+    return total;
+}
+print add_all(5);
+{% endcall %}
+{% call g.answer() %}
+<p>Line 4 is a scope trap. <code>total += i</code> is really <code>total = total + i</code>, so <code>add_all</code> has a local <code>total</code>. On the first pass round the loop the local has no value yet, so the read falls back to the global. Running it would still print 15, but the global <code>total</code> stays 0. Giving the function its own <code>total = 0;</code> before the loop makes the intent clear and removes the warning.</p>
+{% endcall %}
+{% endcall %}
+{% endblock %}

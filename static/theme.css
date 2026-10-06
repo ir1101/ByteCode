@@ -106,7 +106,7 @@ button { cursor: pointer; }
 }
 .pill-solid { border-color: var(--paper); background: var(--paper); color: var(--paper-ink); }
 a.pill { transition: color 150ms var(--ease), border-color 150ms var(--ease), background-color 150ms var(--ease); }
-a.pill:hover { border-color: #5c5c5c; color: var(--text); }
+a.pill:hover { border-color: var(--paper); background: var(--paper); color: var(--paper-ink); }
 a.pill-solid:hover { border-color: #fff; background: #fff; color: var(--paper-ink); }
 .pill[aria-current="page"] { border-color: var(--accent-line); color: var(--text); }
 
@@ -126,12 +126,27 @@ a.pill-solid:hover { border-color: #fff; background: #fff; color: var(--paper-in
   transition: border-color 150ms var(--ease), background-color 150ms var(--ease);
 }
 .link-btn > span { display: inline-flex; align-items: center; padding: 0 14px; }
-.link-btn .arrow { width: 40px; justify-content: center; padding: 0; border-left: 1px solid var(--border-strong); color: var(--muted); }
-.link-btn:hover { border-color: #5c5c5c; background: var(--surface-2); }
-.link-btn:hover .arrow { color: var(--text); }
+.link-btn .arrow {
+  position: relative;
+  width: 40px;
+  justify-content: center;
+  padding: 0;
+  border-left: 1px solid var(--border-strong);
+  color: var(--muted);
+  overflow: hidden;
+  transition: color 150ms var(--ease), border-color 150ms var(--ease);
+}
+/* The arrow flies out to the top right and a new one slides in from the bottom left. */
+.link-btn .arrow b { position: relative; display: inline-block; font-weight: 400; transition: transform 280ms var(--ease); }
+.link-btn .arrow b::after { content: "↗"; position: absolute; top: 0; left: 0; transform: translate(-26px, 26px); }
+.link-btn:hover .arrow b, .link-btn:focus-visible .arrow b { transform: translate(26px, -26px); }
+.link-btn { background: rgba(35, 35, 35, 0.72); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); }
+.link-btn:hover { border-color: var(--paper); background: var(--paper); color: var(--paper-ink); }
+.link-btn:hover .arrow { border-left-color: rgba(0, 0, 0, 0.15); color: var(--paper-ink); }
 .link-btn.is-primary { border-color: var(--accent-fill); background: var(--accent-fill); color: var(--accent-ink); }
 .link-btn.is-primary .arrow { border-left-color: rgba(255, 255, 255, 0.25); color: var(--accent-ink); }
-.link-btn.is-primary:hover { border-color: var(--accent-fill-hover); background: var(--accent-fill-hover); }
+.link-btn.is-primary:hover { border-color: var(--accent-fill-hover); background: var(--accent-fill-hover); color: var(--accent-ink); }
+.link-btn.is-primary:hover .arrow { border-left-color: rgba(255, 255, 255, 0.3); color: var(--accent-ink); }
 
 /* --------------------------------------------------------------- windows */
 
@@ -208,6 +223,32 @@ span.win-btn { cursor: default; }
 
 .win-body { min-height: 0; padding: 12px 14px; }
 
+/* Hovering a window: crop marks appear at its corners, its edge turns violet and its
+   grip lights up. */
+.win { transition: border-color 180ms var(--ease), box-shadow 180ms var(--ease), transform 180ms var(--ease); }
+.win::after {
+  content: "";
+  position: absolute;
+  inset: -8px;
+  pointer-events: none;
+  opacity: 0;
+  background:
+    linear-gradient(var(--accent), var(--accent)) left top / 9px 1px no-repeat,
+    linear-gradient(var(--accent), var(--accent)) left top / 1px 9px no-repeat,
+    linear-gradient(var(--accent), var(--accent)) right top / 9px 1px no-repeat,
+    linear-gradient(var(--accent), var(--accent)) right top / 1px 9px no-repeat,
+    linear-gradient(var(--accent), var(--accent)) left bottom / 9px 1px no-repeat,
+    linear-gradient(var(--accent), var(--accent)) left bottom / 1px 9px no-repeat,
+    linear-gradient(var(--accent), var(--accent)) right bottom / 9px 1px no-repeat,
+    linear-gradient(var(--accent), var(--accent)) right bottom / 1px 9px no-repeat;
+  transition: opacity 180ms var(--ease), inset 220ms var(--ease);
+}
+.win:hover { border-color: rgba(150, 118, 255, 0.45); box-shadow: 0 16px 44px rgba(0, 0, 0, 0.5); }
+.win:hover::after { opacity: 1; inset: -5px; }
+.win:hover > .win-bar .win-handle { color: var(--accent); }
+.win.is-light:hover > .win-bar .win-handle { color: var(--accent-fill); }
+.win:hover > .win-bar .win-handle::before { opacity: 1; }
+
 /* ----------------------------------------------------- readouts and lists */
 
 /* Small uppercase key / value rows, like a system monitor. */
@@ -229,7 +270,22 @@ span.win-btn { cursor: default; }
   text-decoration: none;
   text-transform: uppercase;
 }
-.index-list a:hover { background: var(--surface-3); }
+.index-list a { position: relative; transition: background-color 150ms var(--ease), padding-left 200ms var(--ease); }
+.index-list a::before {
+  content: "";
+  position: absolute;
+  top: 5px;
+  bottom: 5px;
+  left: 0;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--accent);
+  transform: scaleY(0);
+  transition: transform 200ms var(--ease);
+}
+.index-list a:hover { background: var(--surface-3); padding-left: 12px; }
+.index-list a:hover::before { transform: scaleY(1); }
+.index-list a:hover .n, .index-list a:hover .meta { color: var(--accent); }
 .index-list .n { color: var(--muted); font-family: var(--font-mono); font-size: 0.75rem; }
 .index-list .meta { color: var(--muted); font-size: 0.75rem; }
 
@@ -247,6 +303,71 @@ span.win-btn { cursor: default; }
 .chip { display: inline-flex; align-items: center; height: 22px; padding: 0 8px; border: 1px solid var(--border-strong); border-radius: 3px; color: var(--muted); font: 500 0.6875rem/1 var(--font-sans); letter-spacing: 0.06em; text-transform: uppercase; }
 .chip.is-accent { border-color: var(--accent-line); color: var(--accent); }
 .chip.is-ok { border-color: var(--ok-line); color: var(--ok); }
+
+/* ------------------------------------------------------ cursor (fx.js) */
+
+/* On the landing and learning pages a small dot replaces the arrow, and the violet
+   brackets around it do the rest. Links, grips and text fields keep their own cursors. */
+.has-cursor-full body {
+  cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Ccircle cx='6' cy='6' r='2.6' fill='%23fff' stroke='%23151515' stroke-width='1.2'/%3E%3C/svg%3E") 6 6, crosshair;
+}
+
+.cursor { --c: 7px; position: fixed; inset: 0; z-index: 9999; pointer-events: none; opacity: 0; transition: opacity 200ms var(--ease); }
+.cursor.is-visible { opacity: 1; }
+.cursor.is-framing { --c: 10px; }
+.cursor-corner {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: var(--c);
+  height: var(--c);
+  border: 0 solid var(--accent);
+  transition: width 160ms var(--ease), height 160ms var(--ease), margin 160ms var(--ease), opacity 150ms var(--ease), border-color 150ms var(--ease);
+  will-change: transform;
+}
+.cursor-corner.tl { border-top-width: 1.5px; border-left-width: 1.5px; }
+.cursor-corner.tr { margin-left: calc(-1 * var(--c)); border-top-width: 1.5px; border-right-width: 1.5px; }
+.cursor-corner.bl { margin-top: calc(-1 * var(--c)); border-bottom-width: 1.5px; border-left-width: 1.5px; }
+.cursor-corner.br { margin: calc(-1 * var(--c)) 0 0 calc(-1 * var(--c)); border-bottom-width: 1.5px; border-right-width: 1.5px; }
+.cursor.is-down .cursor-corner { border-color: #fff; }
+.cursor.is-text .cursor-corner,
+.cursor.is-lite:not(.is-framing) .cursor-corner { opacity: 0; }
+.cursor-label {
+  position: absolute;
+  top: 0;
+  left: 0;
+  padding: 4px 8px;
+  border-radius: 3px;
+  background: var(--accent-fill);
+  color: #fff;
+  font: 500 0.6875rem/1 var(--font-sans);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  opacity: 0;
+  transition: opacity 150ms var(--ease);
+}
+.cursor.has-label .cursor-label { opacity: 1; }
+
+/* The trail: squares stamped with their position, and a dashed line back to the pointer. */
+.cursor-trail { position: fixed; inset: 0; z-index: 9998; pointer-events: none; }
+.cursor-line { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; opacity: 0; transition: opacity 250ms var(--ease); }
+.cursor-line.is-on { opacity: 1; }
+.cursor-line line { stroke: rgba(205, 205, 205, 0.5); stroke-width: 1; stroke-dasharray: 3 4; }
+.cursor-mark { position: absolute; top: 0; left: 0; animation: mark-life 1500ms var(--ease) forwards; }
+.cursor-mark-box { position: absolute; top: -5px; left: -5px; width: 10px; height: 10px; border: 1px solid var(--accent); }
+.cursor-mark-xy { position: absolute; top: 6px; left: 8px; color: var(--muted); font: 500 10px/1.15 var(--font-mono); font-variant-numeric: tabular-nums; white-space: pre; }
+@keyframes mark-life {
+  0% { opacity: 0; scale: 0; }
+  12% { opacity: 1; scale: 1; }
+  70% { opacity: 1; scale: 1; }
+  100% { opacity: 0; scale: 0.4; }
+}
+
+/* Scrambling text (fx.js): each character keeps its width while glyphs flicker through it. */
+.sc { position: relative; display: inline-block; white-space: pre; }
+.sc-size { visibility: hidden; }
+.sc-glyph { position: absolute; inset: 0; overflow: hidden; text-align: center; }
 
 /* Thin scrollbars that suit the dark surfaces. */
 * { scrollbar-width: thin; scrollbar-color: #454545 transparent; }
