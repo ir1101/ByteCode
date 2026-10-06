@@ -15,7 +15,22 @@ source ─► lexer.py ─► parser.py ─► semantic.py ─► typecheck.py �
 
 The lexer, parser, semantic analysis and type checker **recover from errors**, so one run reports every mistake in the file, with "did you mean" hints for misspelled keywords and names.
 
-The website has three parts: a **landing page** (`/`), the **playground** (`/play`) where every stage is on show, and a **learning section** (`/learn`) with one chapter per stage.
+The website has three parts:
+- a **landing page** (`/`);
+- the **playground** (`/play`), where every stage is on show, with a game of 21 levels;
+- a **learning section** (`/learn`), with 12 lessons that teach the language and 8 chapters that explain the compiler from its own source.
+
+For presenting the project, [`docs/VIVA.md`](docs/VIVA.md) follows one program through every stage, describes every file, and answers the questions examiners usually ask.
+
+## Screenshots
+
+| | |
+|---|---|
+| ![Landing page](docs/screenshots/landing.png) **Landing page.** The stack machine replays a real VM trace. | ![Boot screen](docs/screenshots/boot.png) **Boot screen.** A real self-test compiles and runs `print 6 * 7;`. |
+| ![Playground](docs/screenshots/playground.png) **Playground.** Stepping through recursion, with the call stack's frames. | ![Control-flow graph](docs/screenshots/playground-ir.png) **IR tab.** Basic blocks, the CFG, constants and liveness. |
+| ![Errors](docs/screenshots/playground-errors.png) **Errors.** Every mistake is underlined as you type, including type errors. | ![Levels](docs/screenshots/levels.png) **Levels.** 13 challenges and 8 bug hunts, with stars. |
+| ![Learning section](docs/screenshots/learn.png) **Learn.** Two tracks: the language and the compiler. | ![A lesson](docs/screenshots/lesson.png) **A lesson.** Every example is editable and runs through the real compiler. |
+| ![A chapter](docs/screenshots/chapter.png) **A chapter.** Source quoted live from the compiler's own files. | |
 
 ## Quick start
 
@@ -450,11 +465,13 @@ The chapter pages also show where the stage sits in the pipeline and a contents 
 | `errors.py` | `LexError`, `ParseError`, `SemanticError`, `TypeCheckError`, `CompileError`, `VMError`; each carries a line number, and `errors` lists every error its stage found |
 | `main.py` | command-line driver (`--debug`, `--trace`, `--no-opt`, `--input`) |
 | `api.py` | runs the whole pipeline and returns JSON-ready data; `lint()` runs only the static checks |
-| `app.py` | Flask website: the landing page, playground and learning section, plus `/run`, `/check` and `/lint` |
-| `learn.py` | the learning section's chapters, source quoting and stage demos |
+| `app.py` | Flask website: the landing page, playground and learning section, plus `/run`, `/check`, `/lint` and `/stage` |
+| `guide.py` | the language lessons; their examples run through the real compiler when the page renders |
+| `learn.py` | the compiler chapters, source quoting and stage demos |
 | `levels.py` | game levels, the test harness and star scoring |
 | `templates/`, `static/` | the pages, the shared theme and the scripts (see [Website](#website-apppy)) |
 | `tests/` | 338 unit tests: every stage, error recovery and hints, semantic analysis, type checking, input, the IR and its analyses, the optimizer (including same-behaviour checks), tail calls, arrays, the API, the levels, the website, every example in the language lessons, and every quote and demo in the compiler chapters |
 | `examples/` | `demo.ml`, `optimize.ml`, `functions.ml` (recursion, for, break/continue), `arrays.ml` (lists, `%`, a sieve), `dataflow.ml` (liveness, dead stores, `+=`, tail calls) |
+| `docs/` | `VIVA.md` (notes for presenting the project) and the screenshots above |
 | `.github/workflows/tests.yml` | GitHub Actions: runs the test suite on every push |
 | `requirements.txt` | Flask, the only dependency (for the web playground) |

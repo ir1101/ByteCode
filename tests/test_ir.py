@@ -1,7 +1,7 @@
 """Three-address code, basic blocks, the control-flow graph and constant propagation."""
 import unittest
 
-from tests.helpers import ROOT, compile_source, run_source  # noqa: F401
+from tests.helpers import ROOT, compile_source  # noqa: F401
 from api import run_pipeline
 from compiler import Instruction as I
 from ir import build_ir

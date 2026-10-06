@@ -97,12 +97,12 @@ def input_reader(values):
     """Where `input x;` reads from: --input, or stdin (with a prompt when it's a terminal)."""
     if values is not None:
         return InputReader(io.StringIO(values))
-    prompt = None
-    if sys.stdin.isatty():
-        def prompt():
-            sys.stdout.flush()
-            print("input> ", end="", file=sys.stderr, flush=True)
-    return InputReader(sys.stdin, prompt)
+    return InputReader(sys.stdin, prompt_for_input if sys.stdin.isatty() else None)
+
+
+def prompt_for_input():
+    sys.stdout.flush()   # show everything printed so far before asking
+    print("input> ", end="", file=sys.stderr, flush=True)
 
 
 if __name__ == "__main__":
