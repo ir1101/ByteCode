@@ -43,12 +43,12 @@
     server: "Server error",
   };
 
-  const FLOW_OPS = new Set(["JUMP", "JUMP_IF_FALSE", "CALL", "RET", "HALT"]);
+  const FLOW_OPS = new Set(["JUMP", "JUMP_IF_FALSE", "CALL", "TAIL_CALL", "RET", "HALT"]);
   const MATH_OPS = new Set(["ADD", "SUB", "MUL", "DIV", "MOD", "NEG", "EQ", "NE", "LT", "GT", "LE", "GE", "NOT"]);
 
   /** A VM value as MiniLang prints it: 5, or [1, [2, 3]] for lists. */
   const showValue = (v) => (Array.isArray(v) ? `[${v.map(showValue).join(", ")}]` : String(v));
-  const TARGET_OPS = new Set(["JUMP", "JUMP_IF_FALSE", "CALL"]);
+  const TARGET_OPS = new Set(["JUMP", "JUMP_IF_FALSE", "CALL", "TAIL_CALL"]);
 
   // ------------------------------------------------------------------- editor
 
@@ -65,7 +65,7 @@
         { regex: /\d+/, token: "number" },
         { regex: /[A-Za-z_]\w*(?=\s*\()/, token: "variable-2" },
         { regex: /[A-Za-z_]\w*/, token: "variable" },
-        { regex: /==|!=|<=|>=|[-+*/%<>=]/, token: "operator" },
+        { regex: /==|!=|<=|>=|[-+*/%]=|[-+*/%<>=]/, token: "operator" },
         { regex: /[{}()[\]]/, token: "bracket" },
       ],
       meta: { lineComment: "#" },
@@ -79,6 +79,7 @@
       matchBrackets: true,
       styleActiveLine: true,
       autofocus: true,
+      gutters: ["lint-gutter", "CodeMirror-linenumbers"],
       extraKeys: {
         Tab: (c) => c.execCommand(c.somethingSelected() ? "indentMore" : "insertSoftTab"),
         "Shift-Tab": "indentLess",
@@ -87,6 +88,7 @@
 
     const marks = {}; // kind -> { handle, cls }
     const validLine = (line) => Number.isInteger(line) && line >= 1 && line <= cm.lineCount();
+    let problemMarks = []; // squiggles from live checking
 
     return {
       getValue: () => cm.getValue(),
@@ -114,6 +116,35 @@
         cm.removeLineClass(m.handle, "background", m.cls);
         cm.removeLineClass(m.handle, "gutter", `${m.cls}-gutter`);
         delete marks[kind];
+      },
+      /** Live-check results: a wavy underline and a gutter dot per line, the messages as a tooltip. */
+      setProblems(problems) {
+        cm.operation(() => {
+          problemMarks.forEach((m) => m.clear());
+          problemMarks = [];
+          cm.clearGutter("lint-gutter");
+          const byLine = new Map();
+          for (const p of problems) {
+            if (!validLine(p.line)) continue;
+            const entry = byLine.get(p.line) || { severity: "warning", messages: [] };
+            if (p.severity === "error") entry.severity = "error";
+            entry.messages.push(p.message);
+            byLine.set(p.line, entry);
+          }
+          for (const [line, { severity, messages }] of byLine) {
+            const text = cm.getLine(line - 1);
+            const start = text.search(/\S/);
+            const title = messages.join("\n");
+            if (start >= 0) {
+              problemMarks.push(cm.markText({ line: line - 1, ch: start }, { line: line - 1, ch: text.trimEnd().length },
+                { className: `cm-problem-${severity}`, attributes: { title } }));
+            }
+            const dot = document.createElement("span");
+            dot.className = `lint-dot is-${severity}`;
+            dot.title = title;
+            cm.setGutterMarker(line - 1, "lint-gutter", dot);
+          }
+        });
       },
       reveal(line) {
         if (validLine(line)) cm.scrollIntoView({ line: line - 1, ch: 0 }, 80);
@@ -145,6 +176,7 @@
       },
       mark() {},
       unmark() {},
+      setProblems() {},
       reveal() {},
       goTo(line) {
         const pos = lineStart(line);
@@ -266,7 +298,7 @@
     return {
       ok: false, tokens: null, ast: null, ast_dump: null, bytecode: null,
       bytecode_unoptimized: null, optimizer: {}, output: [], trace: null,
-      trace_truncated: false, error: { stage, message, line: null },
+      trace_truncated: false, error: { stage, message, line: null }, errors: [{ stage, message, line: null }],
     };
   }
 
@@ -290,10 +322,7 @@
 
     editor.unmark("hover");
     editor.unmark("step");
-    editor.unmark("error");
-    if (result.error && result.error.line && !result.error.in_test_code) {
-      editor.mark("error", result.error.line, "cm-line-error");
-    }
+    markErrors(allErrors(result));
     markWarnings(result.warnings);
 
     renderTokens();
@@ -331,7 +360,7 @@
     unmarkWarnings();
     editor.unmark("hover");
     editor.unmark("step");
-    editor.unmark("error");
+    unmarkErrors();
     setStatus("Ready", null);
     $("#status-meta").textContent = "";
   }
@@ -348,8 +377,10 @@
     const r = state.result;
     const ms = `${Math.max(1, Math.round(elapsed))} ms`;
     if (r.error) {
+      const count = allErrors(r).length;
       const where = r.error.line ? ` on line ${r.error.line}` : "";
-      setStatus(`${STAGE_LABEL[r.error.stage] || "Error"}${where}`, "error");
+      setStatus(count > 1 ? `${count} ${(STAGE_LABEL[r.error.stage] || "Error").toLowerCase()}s, the first${where}`
+        : `${STAGE_LABEL[r.error.stage] || "Error"}${where}`, "error");
     } else {
       setStatus(`Ran in ${ms}`, "ok");
     }
@@ -529,8 +560,28 @@
     "scope-trap": "scope trap",
     unreachable: "unreachable",
     unused: "unused",
+    "dead-store": "dead store",
   };
   let warningKinds = [];
+
+  /** Every error of the failing stage (the lexer, parser and semantic analysis report them all). */
+  const allErrors = (r) => (r.errors && r.errors.length ? r.errors : r.error ? [r.error] : []);
+  let errorKinds = [];
+
+  function markErrors(list) {
+    unmarkErrors();
+    list.forEach((err, i) => {
+      if (!err.line || err.in_test_code) return;
+      const kind = `error-${i}`;
+      editor.mark(kind, err.line, "cm-line-error");
+      errorKinds.push(kind);
+    });
+  }
+
+  function unmarkErrors() {
+    errorKinds.forEach((kind) => editor.unmark(kind));
+    errorKinds = [];
+  }
 
   function markWarnings(list) {
     unmarkWarnings();
@@ -618,8 +669,6 @@
 
   // ----------------------------------------------------------------------- IR
 
-  const isTemp = (name) => /^t\d+$/.test(name);
-
   function renderIr() {
     const body = $("#ir-body");
     const r = state.result;
@@ -630,8 +679,11 @@
     const optimized = state.irView === "optimized";
     for (const seg of $$("[data-ir-view]")) seg.setAttribute("aria-pressed", String(seg.dataset.irView === state.irView));
     const st = r.ir.stats;
-    $("#ir-note").textContent = `${plural(st.blocks, "basic block")} · ${plural(st.constant_reads, "constant read")} proven`
-      + (st.unreachable_blocks ? ` · ${plural(st.unreachable_blocks, "unreachable block")}` : "");
+    $("#ir-note").textContent = optimized
+      ? `${plural(st.constant_reads, "constant read")} proven · ${plural(st.removed_stores, "dead store")} removed`
+        + (st.unreachable_blocks ? ` · ${plural(st.unreachable_blocks, "unreachable block")} dropped` : "")
+      : `${plural(st.blocks, "basic block")} · live variables per block`
+        + (st.dead_stores ? ` · ${plural(st.dead_stores, "dead store")}` : "");
 
     for (const proc of r.ir.procedures) {
       const cfg = el("div", { class: "cfg", dataset: { proc: proc.name } },
@@ -644,8 +696,13 @@
     if (state.tab === "ir") drawIrEdges();
   }
 
+  const liveRow = (label, names, title) =>
+    el("div", { class: "ir-live", title },
+      el("span", { class: "ir-live-label" }, label),
+      names.length ? names.map((n) => el("span", { class: "ir-var" }, n)) : el("span", { class: "muted" }, "nothing"));
+
   function irBlock(b, optimized) {
-    const facts = Object.entries(b.constants_in || {}).filter(([name]) => !isTemp(name));
+    const facts = optimized ? Object.entries(b.constants_in || {}) : [];
     const head = el("div", { class: "ir-block-head" },
       el("span", { class: "ir-block-id" }, b.id),
       b.label ? el("span", { class: "ir-block-label" }, `${b.label}:`) : null,
@@ -655,10 +712,21 @@
     let lines;
     if (optimized && !b.reachable) {
       lines = [el("div", { class: "ir-line muted" }, "removed: no path reaches this block")];
+    } else if (optimized) {
+      const removed = new Set(b.optimized_dead || []);
+      lines = b.optimized.length
+        ? b.optimized.map((line, i) => removed.has(i)
+            ? el("div", { class: "ir-line is-removed", title: "Dead store: nothing reads this value, so it is removed" }, line)
+            : el("div", { class: "ir-line" }, line))
+        : [el("div", { class: "ir-line muted" }, "(empty)")];
     } else {
-      const text = optimized ? b.optimized : b.lines;
-      lines = text.length
-        ? text.map((line, i) => el("div", { class: "ir-line", dataset: { line: optimized ? "" : (b.source_lines[i] ?? "") } }, line))
+      const dead = new Set(b.dead || []);
+      lines = b.lines.length
+        ? b.lines.map((line, i) => el("div", {
+              class: `ir-line${dead.has(i) ? " is-dead-store" : ""}`,
+              title: dead.has(i) ? "Dead store: this value is never read before it is overwritten or the program ends" : null,
+              dataset: { line: b.source_lines[i] ?? "" },
+            }, line, dead.has(i) ? el("span", { class: "ir-tag" }, "dead store") : null))
         : [el("div", { class: "ir-line muted" }, "(empty)")];
     }
 
@@ -668,7 +736,9 @@
         ? el("div", { class: "ir-facts", title: "Constants known on entry to this block" },
             facts.map(([name, value]) => el("span", { class: "ir-fact" }, `${name} = ${value}`)))
         : null,
-      el("div", { class: "ir-code" }, lines));
+      optimized ? null : liveRow("live in", b.live_in, "Variables whose value on entry may still be read"),
+      el("div", { class: "ir-code" }, lines),
+      optimized ? null : liveRow("live out", b.live_out, "Variables whose value on exit may still be read by a later block"));
   }
 
   const SVG_NS = "http://www.w3.org/2000/svg";
@@ -773,7 +843,7 @@
     } else if (ins.arg !== null && ins.arg !== undefined) {
       arg = el("span", { class: typeof ins.arg === "number" ? "bc-num" : "bc-name" }, String(ins.arg));
     }
-    const callee = ins.op === "CALL" && code[ins.arg] ? code[ins.arg].label : null;
+    const callee = (ins.op === "CALL" || ins.op === "TAIL_CALL") && code[ins.arg] ? code[ins.arg].label : null;
     return el("li", { class: "bc-row", dataset: { addr: ins.addr, line: ins.line ?? "" } },
       el("span", { class: "bc-addr" }, pad4(ins.addr)),
       el("span", { class: `bc-op ${opClass}` }, ins.op),
@@ -834,33 +904,46 @@
 
     const slot = $("#error-slot");
     slot.replaceChildren();
-    if (r.error) slot.append(errorBox(r.error, r.output.length));
+    if (r.error) slot.append(errorBox(allErrors(r), r.output.length));
 
     renderStepper();
   }
 
-  function errorBox(err, printedLines) {
+  function errorBox(errors, printedLines) {
+    const err = errors[0];
+    const many = errors.length > 1;
     const hints = {
-      lex: "The lexer found a character that isn't part of MiniLang.",
-      parse: "The code doesn't match MiniLang's grammar. Check for a missing ';', brace or bracket.",
-      semantic: "The grammar is fine, but a name or call doesn't make sense. Semantic analysis caught it before anything ran.",
+      lex: many
+        ? "The lexer skipped each bad character and kept going, so every one is listed."
+        : "The lexer found a character that isn't part of MiniLang.",
+      parse: many
+        ? "The parser recovered after each error and kept checking, so all of them are listed. Fix the first one first: a later one can be a knock-on effect of it."
+        : "The code doesn't match MiniLang's grammar. Check for a missing ';', brace or bracket.",
+      semantic: many
+        ? "The grammar is fine, but these names or calls don't make sense. Semantic analysis found all of them before anything ran."
+        : "The grammar is fine, but a name or call doesn't make sense. Semantic analysis caught it before anything ran.",
       compile: "The syntax is fine, but a compile-time check failed.",
       runtime: printedLines
         ? "The program started, printed the output above, then stopped here. Step through below to see the state just before the error."
         : "The program compiled but stopped while running. Step through below to see the state just before the error.",
     };
+    const where = (e) => (e.in_test_code
+      ? el("span", { class: "error-line is-static" }, "in the test code")
+      : e.line
+        ? el("button", {
+            class: "error-line", type: "button", title: "Show this line in the editor",
+            onclick: () => editor.goTo(e.line),
+          }, `line ${e.line}`)
+        : null);
+    const label = STAGE_LABEL[err.stage] || "Error";
     return el("div", { class: "error-box", role: "alert" },
       el("div", { class: "error-head" },
-        el("span", { class: "error-stage" }, STAGE_LABEL[err.stage] || "Error"),
-        err.in_test_code
-          ? el("span", { class: "error-line is-static" }, "in the test code")
-          : err.line
-            ? el("button", {
-                class: "error-line", type: "button", title: "Show this line in the editor",
-                onclick: () => editor.goTo(err.line),
-              }, `line ${err.line}`)
-            : null),
-      el("p", { class: "error-message" }, err.message),
+        el("span", { class: "error-stage" }, many ? `${errors.length} ${label.toLowerCase()}s` : label),
+        many ? null : where(err)),
+      many
+        ? el("ul", { class: "error-list" }, errors.map((e) =>
+            el("li", { class: "error-item" }, where(e), el("span", { class: "error-message" }, e.message))))
+        : el("p", { class: "error-message" }, err.message),
       hints[err.stage] ? el("p", { class: "error-hint" }, hints[err.stage]) : null);
   }
 
@@ -1025,6 +1108,7 @@
 
   editor.onChange(() => {
     if (loading) return;
+    scheduleCheck();
     emit("change");
     if (!state.dirty) {
       state.dirty = true;
@@ -1033,7 +1117,7 @@
     if (state.result && !state.stale) {
       state.stale = true;
       $("#stale-note").hidden = false;
-      editor.unmark("error");
+      unmarkErrors();
       unmarkWarnings();
       applyStepHighlight();
       setStatus("Edited since last run. Press Run to update.", null);
@@ -1042,6 +1126,61 @@
 
   editor.onCursor((line, col) => {
     $("#cursor-pos").textContent = `Ln ${line}, Col ${col}`;
+  });
+
+  // ------------------------------------------- live checking while you type
+
+  // After a short pause in typing, /lint runs the lexer, parser and semantic
+  // analysis (nothing is compiled or run) and the editor underlines what they find.
+  const CHECK_DELAY_MS = 450;
+  let checkTimer = null;
+  let checkSeq = 0;
+  let problems = [];
+
+  function scheduleCheck(delay = CHECK_DELAY_MS) {
+    clearTimeout(checkTimer);
+    checkTimer = setTimeout(checkNow, delay);
+  }
+
+  async function checkNow() {
+    const seq = ++checkSeq;
+    let body = null;
+    try {
+      const response = await fetch("/lint", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...(state.runContext || {}), source: editor.getValue() }),
+      });
+      if (response.ok) body = await response.json();
+    } catch { /* server unreachable: Run will say so */ }
+    if (seq !== checkSeq || !body) return; // a newer edit has already started another check
+    problems = [
+      ...(body.errors || []).map((e) => ({ ...e, severity: "error" })),
+      ...(body.warnings || []).map((w) => ({ ...w, severity: "warning" })),
+    ];
+    editor.setProblems(problems);
+    showProblemCount();
+  }
+
+  function showProblemCount() {
+    const button = $("#problems");
+    const errors = problems.filter((p) => p.severity === "error").length;
+    const warnings = problems.length - errors;
+    button.hidden = false;
+    button.className = `problems${errors ? " is-error" : warnings ? " is-warning" : " is-clean"}`;
+    const parts = [];
+    if (errors) parts.push(plural(errors, "error"));
+    if (warnings) parts.push(plural(warnings, "warning"));
+    button.textContent = parts.length ? parts.join(" · ") : "No problems";
+    button.title = problems.length
+      ? `${problems.map((p) => `Line ${p.line ?? "?"}: ${p.message}`).join("\n")}\n\nClick to go to the first one.`
+      : "The lexer, parser and semantic analysis found nothing to report.";
+    button.disabled = !problems.length;
+  }
+
+  $("#problems").addEventListener("click", () => {
+    const first = problems.find((p) => p.line);
+    if (first) editor.goTo(first.line);
   });
 
   // ---------------------------------------------------------------- examples
@@ -1067,9 +1206,10 @@
     if (state.result) {
       state.stale = true;
       $("#stale-note").hidden = false;
-      editor.unmark("error");
+      unmarkErrors();
       applyStepHighlight();
     }
+    scheduleCheck(0);
     setStatus(`Loaded ${example.name}. Press Run.`, null);
   });
 
@@ -1126,6 +1266,7 @@
     $("#dirty-dot").hidden = true;
     if (title) $("#file-name").textContent = title;
     clearResults();
+    scheduleCheck(0);
   }
 
   window.MiniLang = {
@@ -1134,7 +1275,7 @@
     getSource: () => editor.getValue(),
     getTitle: () => $("#file-name").textContent,
     loadSource,
-    setRunContext(ctx) { state.runContext = ctx; },
+    setRunContext(ctx) { state.runContext = ctx; scheduleCheck(0); },
     run,
     selectTab,
     goToLine: (line) => editor.goTo(line),
@@ -1142,4 +1283,5 @@
   };
 
   selectTab("output");
+  scheduleCheck(0);
 })();

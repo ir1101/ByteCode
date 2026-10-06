@@ -12,6 +12,8 @@ Instruction set ([arg] where one is taken):
     JUMP [addr]           unconditional jump
     JUMP_IF_FALSE [addr]  pop; jump if the value is 0
     CALL [addr]           push a new frame (remembering where to return) and jump to addr
+    TAIL_CALL [addr]      reuse the current frame and jump to addr: `return f(...)`, made
+                          by the optimizer from CALL + RET, so tail recursion needs no new frames
     RET                   pop the return value, drop the frame, jump back, push the value
     BUILD_LIST [n]        pop n values, push a new list holding them (first pushed = first item)
     INDEX                 pop i, pop list, push list[i]
@@ -317,7 +319,7 @@ def disassemble(code):
             lines.append(f"      {ins.label}:")
         arg = "" if ins.arg is None else str(ins.arg)
         src = "" if ins.line is None else f"; line {ins.line}"
-        if ins.op == "CALL" and isinstance(ins.arg, int) and ins.arg < len(code) and code[ins.arg].label:
+        if ins.op in ("CALL", "TAIL_CALL") and isinstance(ins.arg, int) and ins.arg < len(code) and code[ins.arg].label:
             src += f"  -> {code[ins.arg].label}"
         lines.append(f"{addr:04d}  {ins.op:<14}{arg:<8}{src}".rstrip())
     return "\n".join(lines)

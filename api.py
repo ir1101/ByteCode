@@ -4,6 +4,9 @@ The web UI calls run_pipeline() (through app.py) and gets back tokens, AST,
 bytecode, program output, an optional step-by-step trace, and a structured
 error if any stage fails. Stages that finished before an error are still
 returned, so the UI can show how far the program got.
+
+lint() runs only the static stages (lexer, parser, semantic analysis), which is
+fast enough for the editor to call while you type.
 """
 
 import copy
@@ -54,7 +57,9 @@ def run_pipeline(source, optimize=True, trace=False, max_steps=MAX_STEPS,
 
     Keys: ok, tokens, ast, ast_dump, symbols, warnings, ir, bytecode,
     bytecode_unoptimized, optimizer, output, steps, trace, trace_truncated,
-    error. A stage that never ran is None.
+    error, errors. A stage that never ran is None. `error` is the first
+    error; `errors` lists every one the failing stage found (the lexer,
+    parser and semantic analysis recover and keep going).
     """
     result = {
         "ok": False,
@@ -72,10 +77,11 @@ def run_pipeline(source, optimize=True, trace=False, max_steps=MAX_STEPS,
         "trace": [] if trace else None,
         "trace_truncated": False,
         "error": None,
+        "errors": [],
     }
     if len(source) > MAX_SOURCE_CHARS:
-        result["error"] = {"stage": "input", "line": None,
-                           "message": f"source is longer than {MAX_SOURCE_CHARS} characters"}
+        _fail(result, [{"stage": "input", "line": None,
+                        "message": f"source is longer than {MAX_SOURCE_CHARS} characters"}])
         return result
 
     out = io.StringIO()
@@ -111,17 +117,44 @@ def run_pipeline(source, optimize=True, trace=False, max_steps=MAX_STEPS,
         vm.run()
         result["ok"] = True
     except MiniLangError as e:
-        result["error"] = error_to_dict(e)
+        _fail(result, [error_to_dict(err) for err in e.errors])
     except RecursionError:
         # The parser and compiler are recursive, so absurdly deep nesting such as
         # ((((((...)))))) can exhaust Python's stack. Report it instead of crashing.
         stage = "parse" if result["ast"] is None else "semantic" if result["symbols"] is None else "compile"
-        result["error"] = {"stage": stage, "line": None,
-                           "message": "program is nested too deeply to compile"}
+        _fail(result, [_too_deep(stage)])
     finally:
         # Keep whatever was printed, even if the program failed part-way.
         result["output"] = out.getvalue().splitlines()
     return result
+
+
+def _fail(result, errors):
+    result["errors"] = errors
+    result["error"] = errors[0]
+
+
+def _too_deep(stage):
+    return {"stage": stage, "line": None, "message": "program is nested too deeply to compile"}
+
+
+def lint(source, predefined=()):
+    """Only the static checks: every error and warning, without generating code or running.
+
+    Returns {"errors": [...], "warnings": [...]}, each item with stage/code, line and message.
+    """
+    if len(source) > MAX_SOURCE_CHARS:
+        return {"errors": [{"stage": "input", "line": None,
+                            "message": f"source is longer than {MAX_SOURCE_CHARS} characters"}],
+                "warnings": []}
+    tree = None
+    try:
+        tree = parse(tokenize(source))
+        return {"errors": [], "warnings": analyze(tree, predefined=predefined).to_dict()["warnings"]}
+    except MiniLangError as e:
+        return {"errors": [error_to_dict(err) for err in e.errors], "warnings": []}
+    except RecursionError:
+        return {"errors": [_too_deep("parse" if tree is None else "semantic")], "warnings": []}
 
 
 def _snapshot(value, seen=frozenset()):

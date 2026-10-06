@@ -84,6 +84,45 @@ class ConstantPropagationTests(unittest.TestCase):
         self.assertTrue(any(l.endswith(" + g") for l in lines), lines)      # global g unknown inside f
 
 
+class LivenessTests(unittest.TestCase):
+    def test_live_sets_around_a_loop(self):
+        blocks = main_blocks("i = 0;\nwhile i < 3 { i = i + 1; }\nprint i;")
+        self.assertEqual(blocks[0]["live_in"], [])
+        self.assertEqual(blocks[0]["live_out"], ["i"])
+        self.assertEqual(blocks[1]["live_in"], ["i"])       # the condition reads it
+        self.assertEqual(blocks[3]["live_out"], [])         # nothing is read after the program ends
+
+    def test_overwritten_value_is_a_dead_store(self):
+        (block,) = main_blocks("x = 1;\nx = 2;\nprint x;")
+        self.assertEqual(block["dead"], [0])
+
+    def test_value_read_on_one_path_is_live(self):
+        blocks = main_blocks("x = 1;\nif n { x = 2; }\nprint x;")
+        self.assertEqual(blocks[0]["dead"], [])
+
+    def test_a_global_read_by_a_called_function_is_live(self):
+        procs = ir_of("g = 1;\nfunc f() { return g; }\nprint f();\ng = 2;").to_dict()["procedures"]
+        self.assertEqual(procs[0]["blocks"][0]["dead"], [3])   # only g = 2, after the last call
+
+    def test_function_locals_die_at_return(self):
+        procs = ir_of("func f(a) { b = a; b = 2; return a; }\nprint f(1);").to_dict()["procedures"]
+        self.assertEqual(procs[1]["blocks"][0]["dead"], [0, 1])
+
+    def test_temps_never_clash_with_a_variable_named_t1(self):
+        (block,) = main_blocks("t1 = 100;\ny = 2 * 3 + t1;\nprint y;")
+        self.assertEqual(block["optimized"][-1], "print 106")
+        self.assertEqual(run_pipeline("t1 = 100;\ny = 2 * 3 + t1;\nprint y;")["output"], ["106"])
+
+    def test_optimized_view_drops_stores_made_dead_by_propagation(self):
+        (block,) = main_blocks("x = 10;\ny = x * 2;\nprint y;")
+        self.assertEqual(block["optimized"], ["x = 10", "y = 20", "print 20"])
+        self.assertEqual(block["optimized_dead"], [0, 1])
+
+    def test_a_store_that_might_fail_is_never_removed(self):
+        (block,) = main_blocks("d = 0;\nx = 5 / d;\nprint 1;")
+        self.assertNotIn(1, block["optimized_dead"])          # x = 5 / 0 must still raise
+
+
 class OptimizerIntegrationTests(unittest.TestCase):
     def test_propagation_enables_folding_and_branch_removal(self):
         code = compile_source("x = 10;\ny = x * 2;\nif y > 5 { print y; } else { print 0; }", optimize=True)
@@ -99,8 +138,11 @@ class OptimizerIntegrationTests(unittest.TestCase):
 
     def test_pipeline_includes_ir(self):
         r = run_pipeline("x = 1;\nprint x + 1;")
-        self.assertEqual(r["ir"]["procedures"][0]["blocks"][0]["optimized"], ["x = 1", "t1 = 2", "print 2"])
+        block = r["ir"]["procedures"][0]["blocks"][0]
+        self.assertEqual(block["optimized"], ["x = 1", "t1 = 2", "print 2"])
+        self.assertEqual(block["optimized_dead"], [0, 1])
         self.assertEqual(r["ir"]["stats"]["constant_reads"], 1)
+        self.assertEqual(r["ir"]["stats"]["removed_stores"], 2)
 
 
 if __name__ == "__main__":

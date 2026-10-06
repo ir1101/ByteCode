@@ -6,6 +6,9 @@
                  number. With "level", the code runs on that level's example test.
     POST /check  body {"level": "c1", "source": "..."}  ->  every test of the level,
                  the score, and the stars earned (see levels.py)
+    POST /lint   body {"source": "...", "level"?: "c1"}  ->  {"errors": [...], "warnings": [...]}
+                 from the lexer, parser and semantic analysis only; the editor calls it
+                 as you type to underline problems before you press Run
 
 Run:  python app.py         this computer only: http://127.0.0.1:5000
       python app.py --lan   also every device on your Wi-Fi / LAN (the addresses are printed)
@@ -18,8 +21,8 @@ import socket
 from flask import Flask, jsonify, render_template, request
 from werkzeug.exceptions import HTTPException
 
-from api import run_pipeline
-from levels import LEVELS_BY_ID, check_level, public_levels, run_example
+from api import lint, run_pipeline
+from levels import LEVELS_BY_ID, check_level, lint_level, public_levels, run_example
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 EXAMPLES_DIR = os.path.join(ROOT, "examples")
@@ -79,6 +82,20 @@ def check():
     if level is None:
         return jsonify(error=f"unknown level {body['level']!r}"), 404
     return jsonify(check_level(level, body["source"]))
+
+
+@app.post("/lint")
+def lint_route():
+    body = request.get_json(silent=True)
+    if not isinstance(body, dict) or not isinstance(body.get("source"), str):
+        return bad_request('{"source": "print 1;"}')
+    level_id = body.get("level")
+    if level_id is not None:
+        level = LEVELS_BY_ID.get(level_id) if isinstance(level_id, str) else None
+        if level is None:
+            return jsonify(error=f"unknown level {level_id!r}"), 404
+        return jsonify(lint_level(level, body["source"]))
+    return jsonify(lint(body["source"]))
 
 
 @app.errorhandler(413)

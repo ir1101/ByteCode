@@ -13,22 +13,53 @@ Two passes over the AST:
 Errors (the program is rejected):
   undefined variable or function, wrong argument count, duplicate or
   built-in function names, duplicate parameters, return / break / continue
-  in the wrong place.
+  in the wrong place. Analysis carries on after an error, so every one is
+  reported in a single run, and an unknown name gets a "did you mean" hint
+  when a known name is spelled almost the same.
 Warnings (the program still runs):
   a variable that may be used before it is assigned, the "scope trap" (a
   function reads a global and also assigns the same name, which creates a
-  separate local), unreachable code, and unused variables, parameters and
-  functions.
+  separate local), unreachable code, unused variables, parameters and
+  functions, and dead stores: a value that is assigned but never read before
+  it is overwritten or the program ends (found by liveness analysis, ir.py).
 
 MiniLang's scope rule, which this mirrors: inside a function, parameters and
 any assigned name are locals; other names are read from the globals.
 """
 
+import difflib
+
 from ast_nodes import (ArrayLit, Assign, BinOp, Block, Break, Call, Continue, ExprStmt,
                        For, FuncDef, If, Index, IndexAssign, LogicalOp, Number, Print,
                        Return, UnaryOp, Var, While)
 from compiler import BUILTINS
-from errors import SemanticError
+from errors import SemanticError, raise_all
+from ir import build_ir
+
+# Names from other languages, and what MiniLang does instead.
+FOREIGN_NAMES = {
+    "true": "MiniLang has no booleans: use 1 for true and 0 for false",
+    "false": "MiniLang has no booleans: use 1 for true and 0 for false",
+    "True": "MiniLang has no booleans: use 1 for true and 0 for false",
+    "False": "MiniLang has no booleans: use 1 for true and 0 for false",
+    "null": "MiniLang has no null value: use 0",
+    "None": "MiniLang has no null value: use 0",
+}
+FOREIGN_FUNCTIONS = {
+    "length": "a list's length is len(a)",
+    "size": "a list's length is len(a)",
+    "push": "add to a list with append(a, x)",
+    "println": "print with the statement: print x;",
+    "printf": "print with the statement: print x;",
+}
+
+
+def did_you_mean(name, known, foreign):
+    """A hint for an unknown name: what MiniLang uses instead, or a close spelling."""
+    if name in foreign:
+        return f" ({foreign[name]})"
+    match = difflib.get_close_matches(name, sorted(known), n=1, cutoff=0.6)
+    return f" (did you mean '{match[0]}'?)" if match else ""
 
 
 class Symbol:
@@ -98,6 +129,13 @@ class Analyzer:
         self.function = None   # the Function being analysed, or None at top level
         self.loop_depth = 0
         self.flagged = set()   # (scope, name): warn about an unassigned read once, at its first read
+        self.errors = []
+        self.unknown = set()   # (scope, name) already reported as undefined
+
+    def error(self, message, line):
+        """Record an error and keep analysing, so one run reports all of them."""
+        if not any(e.line == line and e.message == message for e in self.errors):
+            self.errors.append(SemanticError(message, line))
 
     # ------------------------------------------------------------ pass 1
 
@@ -123,12 +161,17 @@ class Analyzer:
         assigned = set(self.predefined)
         for stmt in program.statements:
             if isinstance(stmt, FuncDef):
-                self.check_function(self.result.functions[stmt.name])
+                fn = self.result.functions.get(stmt.name)
+                if fn is not None and fn.node is stmt:   # not a rejected duplicate
+                    self.check_function(fn)
             elif assigned is None:
                 self.result.warn(stmt.line, "unreachable", "this code can never run")
             else:
                 assigned = self.stmt(stmt, assigned)
+        if self.errors:
+            raise_all(self.errors)
         self.report_unused()
+        self.report_dead_stores(program)
         return self.result
 
     def global_symbol(self, name, line):
@@ -138,14 +181,14 @@ class Analyzer:
 
     def declare_function(self, node):
         if node.name in BUILTINS:
-            raise SemanticError(f"'{node.name}' is a built-in function and can't be redefined", node.line)
+            return self.error(f"'{node.name}' is a built-in function and can't be redefined", node.line)
         if node.name in self.result.functions:
             first = self.result.functions[node.name].line
-            raise SemanticError(f"function '{node.name}' is already defined on line {first}", node.line)
+            return self.error(f"function '{node.name}' is already defined on line {first}", node.line)
         seen = set()
         for param in node.params:
             if param in seen:
-                raise SemanticError(f"duplicate parameter '{param}' in function '{node.name}'", node.line)
+                self.error(f"duplicate parameter '{param}' in function '{node.name}'", node.line)
             seen.add(param)
         self.result.functions[node.name] = Function(node)
 
@@ -199,18 +242,21 @@ class Analyzer:
                 self.stmt(node.update, assigned)
             return assigned
         if isinstance(node, Return):
-            if self.function is None:
-                raise SemanticError("'return' outside a function", node.line)
             if node.value is not None:
                 self.expr(node.value, assigned)
+            if self.function is None:
+                self.error("'return' outside a function", node.line)
+                return assigned   # keep checking the code after it
             return None
         if isinstance(node, (Break, Continue)):
             if self.loop_depth == 0:
                 word = "break" if isinstance(node, Break) else "continue"
-                raise SemanticError(f"'{word}' outside a loop", node.line)
+                self.error(f"'{word}' outside a loop", node.line)
+                return assigned
             return None
         if isinstance(node, FuncDef):
-            raise SemanticError("functions can only be defined at the top level", node.line)
+            self.error("functions can only be defined at the top level", node.line)
+            return assigned
         raise SemanticError(f"unexpected statement {type(node).__name__}", node.line)
 
     def loop_body(self, body, assigned):
@@ -245,15 +291,17 @@ class Analyzer:
         if node.name in BUILTINS:
             arity = BUILTINS[node.name][1]
             if len(node.args) != arity:
-                raise SemanticError(f"built-in '{node.name}' takes {arity} argument(s), "
-                                    f"but {len(node.args)} were given", node.line)
+                self.error(f"built-in '{node.name}' takes {arity} argument(s), "
+                           f"but {len(node.args)} were given", node.line)
             return
         fn = self.result.functions.get(node.name)
         if fn is None:
-            raise SemanticError(f"undefined function '{node.name}'", node.line)
+            known = set(self.result.functions) | set(BUILTINS)
+            hint = did_you_mean(node.name, known, FOREIGN_FUNCTIONS)
+            return self.error(f"undefined function '{node.name}'{hint}", node.line)
         if len(node.args) != len(fn.params):
-            raise SemanticError(f"function '{node.name}' takes {len(fn.params)} argument(s), "
-                                f"but {len(node.args)} were given", node.line)
+            self.error(f"function '{node.name}' takes {len(fn.params)} argument(s), "
+                       f"but {len(node.args)} were given", node.line)
         fn.calls.append(node.line)
 
     def read(self, node, assigned):
@@ -284,8 +332,12 @@ class Analyzer:
             elif name not in assigned:
                 self.result.warn(line, "maybe-unassigned", f"'{name}' may be used before it is assigned")
             return
+        if (scope, name) in self.unknown:
+            return   # already reported at its first use in this scope
+        self.unknown.add((scope, name))
+        known = set(self.result.globals) | (set(fn.symbols) if fn is not None else set())
         where = f" in {fn.name}()" if fn is not None else ""
-        raise SemanticError(f"undefined variable '{name}'{where}", line)
+        self.error(f"undefined variable '{name}'{where}{did_you_mean(name, known, FOREIGN_NAMES)}", line)
 
     def report_unused(self):
         for sym in self.result.globals.values():
@@ -302,6 +354,23 @@ class Analyzer:
                 else:
                     self.result.warn(sym.line, "unused",
                                      f"'{sym.name}' is assigned in {fn.name}() but never used there")
+
+
+    def report_dead_stores(self, program):
+        """Stores whose value no path reads. A variable that is never read at all
+        already has an 'unused' warning, and a line keeps the warning it already has."""
+        warned = {w["line"] for w in self.result.warnings}
+        for proc, node in build_ir(program).dead_stores:
+            if proc.name == "main":
+                sym = self.result.globals.get(node.name)
+            else:
+                fn = self.result.functions.get(proc.name.split("(")[0])
+                sym = fn.symbols.get(node.name) if fn is not None else None
+            if sym is None or not sym.reads or node.line in warned:
+                continue
+            self.result.warn(node.line, "dead-store",
+                             f"the value assigned to '{node.name}' here is never read: it is "
+                             "assigned again, or the program ends, before anything uses it")
 
 
 def meet(a, b):

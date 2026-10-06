@@ -1,26 +1,35 @@
-"""Optimizer: three passes that never change what a program prints or which error it raises.
+"""Optimizer: four passes that never change what a program prints or which error it raises.
 
   1. Constant propagation (ir.py): data-flow analysis over the control-flow
      graph finds every variable read whose value is the same constant on
      every path. Those reads become literals.
   2. Constant folding on the AST: 2 * 3 + 4 becomes 10, `0 and f()` becomes 0.
-  3. A peephole pass on the bytecode: constant branches, jump threading,
-     jumps to the next instruction and unreachable code.
+  3. Dead-store elimination (liveness analysis in ir.py): an assignment whose
+     value is never read is deleted, provided its right-hand side can't fail
+     or have side effects (a constant, a list of constants, a variable that is
+     surely assigned).
+  4. A peephole pass on the bytecode: constant branches, jump threading,
+     jumps to the next instruction, unreachable code, and tail calls.
 
-Propagation feeds folding: after `x = 10; y = x * 2;` the read of x becomes 10,
-so x * 2 folds to 20, and a later `if y > 5` becomes a constant branch that the
-peephole pass removes.
+The passes feed each other: after `x = 10; y = x * 2; print y;` propagation turns
+the reads into 10 and 20, folding computes x * 2, and then x and y are never
+read, so both stores are dead and the whole program becomes PUSH 20; PRINT.
+
+The one deliberate change in behaviour is tail-call optimization: `return f(...)`
+reuses the current call's frame (TAIL_CALL), so tail recursion no longer runs
+into the call-depth limit. Every other program behaves exactly as unoptimized.
 """
 
 from ast_nodes import (ArrayLit, Assign, BinOp, Block, Call, ExprStmt, For, FuncDef,
                        If, Index, IndexAssign, LogicalOp, Number, Print, Program,
                        Return, UnaryOp, Var, While)
 from compiler import BINARY_OPCODES, Instruction, compile_program
-from ir import constant_reads
+from ir import constant_reads, removable_stores
 from vm import apply_binary
 
 JUMPS = {"JUMP", "JUMP_IF_FALSE"}
-HAS_TARGET = JUMPS | {"CALL"}  # instructions whose arg is a code address
+HAS_TARGET = JUMPS | {"CALL", "TAIL_CALL"}  # instructions whose arg is a code address
+MAX_DSE_ROUNDS = 10
 
 
 # ======================= Pass 2: AST constant folding =======================
@@ -35,20 +44,26 @@ def fold_constants(node, constants=None):
 
 
 class Folder:
-    def __init__(self, constants):
+    def __init__(self, constants, dead=frozenset()):
         self.constants = constants
+        self.dead = dead   # id(Assign node) of dead stores to delete
+
+    def statements(self, statements):
+        return [s for s in map(self.fold, statements) if s is not None]
 
     def fold(self, node):
         if node is None:
             return None
         f = self.fold
         if isinstance(node, Program):
-            return Program([f(s) for s in node.statements], line=node.line)
+            return Program(self.statements(node.statements), line=node.line)
         if isinstance(node, Block):
-            return Block([f(s) for s in node.statements], line=node.line)
+            return Block(self.statements(node.statements), line=node.line)
         if isinstance(node, FuncDef):
             return FuncDef(node.name, node.params, f(node.body), line=node.line)
         if isinstance(node, Assign):
+            if id(node) in self.dead:
+                return None
             return Assign(node.name, f(node.value), line=node.line)
         if isinstance(node, Print):
             return Print(f(node.value), line=node.line)
@@ -112,7 +127,22 @@ class Folder:
         return LogicalOp(node.op, left, right, line=node.line)
 
 
-# ========================= Pass 3: bytecode peephole ========================
+# ===================== Pass 3: dead-store elimination =======================
+
+def remove_dead_stores(tree):
+    """Delete assignments whose value is never read (see ir.IR.removable).
+
+    Repeats, because deleting `y = x` can leave the earlier `x = [1]` dead too.
+    """
+    for _ in range(MAX_DSE_ROUNDS):
+        dead = removable_stores(tree)
+        if not dead:
+            break
+        tree = Folder({}, dead).fold(tree)
+    return tree
+
+
+# ========================= Pass 4: bytecode peephole ========================
 
 def peephole(code):
     """Return optimized bytecode. Repeats the sub-passes until nothing changes."""
@@ -120,7 +150,7 @@ def peephole(code):
     changed = True
     while changed:
         changed = False
-        for sub_pass in (_resolve_constant_branches, _thread_jumps,
+        for sub_pass in (_resolve_constant_branches, _thread_jumps, _tail_calls,
                          _remove_jumps_to_next, _remove_unreachable):
             code, did_change = sub_pass(code)
             changed = changed or did_change
@@ -198,6 +228,29 @@ def _thread_jumps(code):
     return code, changed
 
 
+def _tail_calls(code):
+    """CALL f followed by RET (possibly via JUMPs) becomes TAIL_CALL f.
+
+    `return f(x);` has nothing left to do after f returns, so f can reuse the
+    caller's frame: its RET then goes straight back to our caller. Recursion
+    in tail position runs in a constant number of frames. The old RET stays in
+    place for any other path that jumps to it; if none does, it is unreachable
+    and gets removed.
+    """
+    changed = False
+    for i, ins in enumerate(code):
+        if ins.op != "CALL":
+            continue
+        j, seen = i + 1, set()
+        while j < len(code) and code[j].op == "JUMP" and j not in seen:
+            seen.add(j)
+            j = code[j].arg
+        if j < len(code) and code[j].op == "RET":
+            code[i] = Instruction("TAIL_CALL", ins.arg, ins.line, ins.label)
+            changed = True
+    return code, changed
+
+
 def _remove_jumps_to_next(code):
     """A JUMP to the very next instruction does nothing."""
     keep = [not (ins.op == "JUMP" and ins.arg == i + 1) for i, ins in enumerate(code)]
@@ -219,7 +272,7 @@ def _remove_unreachable(code):
             continue
         reachable.add(i)
         ins = code[i]
-        if ins.op == "JUMP":
+        if ins.op in ("JUMP", "TAIL_CALL"):   # neither ever falls through
             work.append(ins.arg)
         elif ins.op not in ("HALT", "RET"):
             work.append(i + 1)  # includes CALL: execution resumes here after RET
@@ -231,10 +284,14 @@ def _remove_unreachable(code):
 
 
 def optimize(program, propagate=True):
-    """Full optimizing compile: propagate and fold constants, generate code, then peephole it."""
+    """Full optimizing compile: propagate and fold constants, delete dead stores,
+    generate code, then peephole it. propagate=False skips both data-flow passes."""
     # Compile the original tree once first, only for its checks: folding can
     # remove code (e.g. `0 and missing()`), and a semantic error there must
     # still be reported exactly as it is without the optimizer.
     compile_program(program)
-    constants = constant_reads(program) if propagate else None
-    return peephole(compile_program(fold_constants(program, constants)))
+    if not propagate:
+        return peephole(compile_program(fold_constants(program)))
+    tree = fold_constants(program, constant_reads(program))
+    tree = remove_dead_stores(tree)
+    return peephole(compile_program(tree))

@@ -1,5 +1,5 @@
 """Intermediate representation: three-address code, basic blocks, a control-flow
-graph, and constant propagation over it.
+graph, and three data-flow analyses over it.
 
 1. Lowering. The AST becomes three-address code (TAC): simple instructions with
    at most one operator, e.g.  t1 = n * 2 ;  x = t1 + 1 ;  if_false t2 goto L3.
@@ -16,10 +16,24 @@ graph, and constant propagation over it.
    changes. A branch whose condition is a known constant only follows its taken
    edge, so dead branches don't spoil the facts that reach the join point.
 
-The optimizer uses the result: every variable read that is provably constant is
-replaced by that constant in the AST, before constant folding and code
-generation (see optimizer.optimize).
+4. Liveness (a backward "may" analysis). A variable is live at a point if its
+   current value may still be read on some path from there. live_out(B) is the
+   union of live_in over B's successors, and live_in(B) = use(B) + (live_out(B)
+   - def(B)). A store to a variable that is not live just after it is a *dead
+   store*: its value is overwritten or the program ends before anyone reads it.
+
+5. Definite assignment (a forward "must" analysis, meet = intersection): which
+   variables surely hold a value at each point. Reading one of those can never
+   fail with "undefined variable", which tells the optimizer that deleting such
+   a read (inside a dead store) cannot hide a runtime error.
+
+The optimizer uses the results: every variable read that is provably constant is
+replaced by that constant in the AST before constant folding, and dead stores
+whose right-hand side can't fail or have side effects are deleted (see
+optimizer.optimize). Semantic analysis turns dead stores into warnings.
 """
+
+from types import SimpleNamespace
 
 from ast_nodes import (ArrayLit, Assign, BinOp, Block as BlockNode, Break, Call, Continue,
                        ExprStmt, For, FuncDef, If, Index, IndexAssign, LogicalOp, Number,
@@ -52,11 +66,14 @@ class Name:
 
 
 class Temp:
+    """A compiler temporary, shown as t1, t2, ... Its data-flow key is "%t1": '%' can't
+    appear in a MiniLang name, so a temp never collides with a user variable called t1."""
+
     def __init__(self, number):
-        self.name = f"t{number}"
+        self.name = f"%t{number}"
 
     def __str__(self):
-        return self.name
+        return self.name[1:]
 
 
 def _var_key(operand):
@@ -74,6 +91,7 @@ class Quad:
         self.target = target    # label (goto / iffalse / label) or function name (call)
         self.symbol = symbol    # '+', '-', 'not', ...
         self.line = line
+        self.origin = None      # the AST Assign whose value this quad stores, if any
 
     def __str__(self):
         a = [str(x) for x in self.args]
@@ -159,6 +177,7 @@ class Lowerer:
     def stmt(self, node):
         if isinstance(node, Assign):
             self.expr(node.value, dst=Name(node.name))
+            self.code[-1].origin = node   # the quad that finally stores the value
         elif isinstance(node, IndexAssign):
             target, index = self.expr(node.target), self.expr(node.index)
             self.emit("setindex", args=[target, index, self.expr(node.value)], line=node.line)
@@ -440,6 +459,108 @@ def propagate(proc):
 
 
 # --------------------------------------------------------------------------- #
+#  4. Liveness and dead stores
+# --------------------------------------------------------------------------- #
+
+
+def uses_of(quad, call_uses):
+    """Variables a quad reads. A call may also read any global a function reads."""
+    used = {key for key in map(_var_key, quad.args) if key is not None}
+    if quad.op == "call":
+        used |= call_uses
+    return used
+
+
+def live_after_each(quads, live_out, call_uses):
+    """Walk a block backwards from live_out. Returns (live set just after each quad, live_in)."""
+    after = [None] * len(quads)
+    live = set(live_out)
+    for i in range(len(quads) - 1, -1, -1):
+        after[i] = frozenset(live)
+        quad = quads[i]
+        if quad.dst is not None:
+            live.discard(quad.dst.name)   # kill the definition first: x = x + 1 still reads x
+        live |= uses_of(quad, call_uses)
+    return after, live
+
+
+def liveness(blocks, call_uses=frozenset()):
+    """Iterate to a fixed point. Returns ({block id: live_in}, {block id: live_out})."""
+    live_in = {b.id: set() for b in blocks}
+    live_out = {b.id: set() for b in blocks}
+    changed = True
+    while changed:
+        changed = False
+        for block in reversed(blocks):   # a backward problem converges faster in reverse order
+            out = set().union(*(live_in[s] for s in block.succ))
+            _, inn = live_after_each(block.quads, out, call_uses)
+            if out != live_out[block.id] or inn != live_in[block.id]:
+                live_out[block.id], live_in[block.id] = out, inn
+                changed = True
+    return live_in, live_out
+
+
+def globals_read_by_functions(procedures, safe_reads):
+    """Names a function may read from the globals: every read that isn't of a parameter
+    or a local surely assigned by then. A call in main may read any of these."""
+    return frozenset(arg.name for proc in procedures[1:] for quad in proc.quads for arg in quad.args
+                     if isinstance(arg, Name) and id(arg.node) not in safe_reads)
+
+
+# --------------------------------------------------------------------------- #
+#  5. Definite assignment
+# --------------------------------------------------------------------------- #
+
+
+def definitely_assigned(proc):
+    """{block id: names surely assigned on entry}, or None for an unreachable block."""
+    blocks = proc.blocks
+    entry = {b.id: None for b in blocks}
+    out = {b.id: None for b in blocks}
+    changed = True
+    while changed:
+        changed = False
+        for block in blocks:
+            if block is blocks[0]:
+                incoming = set(proc.params)   # a procedure starts with only its parameters
+            else:
+                incoming = None
+                for p in block.pred:
+                    if out[p] is not None:
+                        incoming = set(out[p]) if incoming is None else incoming & out[p]
+            if incoming is None:
+                continue
+            state = incoming | {q.dst.name for q in block.quads if q.dst is not None}
+            if incoming != entry[block.id] or state != out[block.id]:
+                entry[block.id], out[block.id] = incoming, state
+                changed = True
+    return entry
+
+
+def harmless(node, safe_reads):
+    """True if evaluating this expression can't fail and has no side effects,
+    so deleting it can't change what the program prints or which error it raises."""
+    if isinstance(node, Number):
+        return True
+    if isinstance(node, Var):
+        return id(node) in safe_reads              # surely assigned: can't be "undefined"
+    if isinstance(node, ArrayLit):
+        return all(harmless(item, safe_reads) for item in node.items)
+    if isinstance(node, BinOp) and node.op in ("==", "!="):   # the only operators that accept lists
+        return harmless(node.left, safe_reads) and harmless(node.right, safe_reads)
+    return False   # arithmetic (lists, division by zero), indexing, calls, not/and/or
+
+
+def harmless_quad(quad, safe_reads):
+    """The same test for a quad of the optimized three-address code."""
+    def ok(arg):
+        return isinstance(arg, (Const, Temp)) or (isinstance(arg, Name) and id(arg.node) in safe_reads)
+    if quad.op in ("copy", "list"):
+        return all(ok(a) for a in quad.args)
+    return quad.op == "binop" and quad.symbol in ("==", "!=") and all(ok(a) for a in quad.args)
+
+
+# --------------------------------------------------------------------------- #
 #  Putting it together
 # --------------------------------------------------------------------------- #
 
@@ -449,8 +570,17 @@ class IR:
         self.procedures = Lowerer().lower(program)
         self.facts = {}           # proc name -> {block id: entry state}
         self.constants = {}       # id(AST Var node) -> constant value read there
+        self.live = {}            # proc name -> ({block id: live_in}, {block id: live_out})
+        self.dead = {}            # proc name -> {block id: indexes of dead stores}
+        self.dead_stores = []     # (procedure, Assign node) whose stored value is never read
+        self.safe_reads = set()   # id(AST Var node) of reads that can't be undefined
+        self.removable = set()    # id(AST Assign node) the optimizer may delete
+        self._optimized = {}      # proc name -> (rewritten quads per block, dead-store indexes)
         for proc in self.procedures:
             build_cfg(proc)
+            self._find_safe_reads(proc)
+        self.call_uses = globals_read_by_functions(self.procedures, self.safe_reads)
+        for proc in self.procedures:
             entry = propagate(proc)
             self.facts[proc.name] = entry
             for block in proc.blocks:
@@ -462,48 +592,114 @@ class IR:
                         if isinstance(arg, Name) and arg.node is not None and arg.name in state:
                             self.constants[id(arg.node)] = state[arg.name]
                     state = transfer(quad, state)
+            self._find_dead_stores(proc)
 
-    # ----- rendering -----
-    def optimized_lines(self, proc, block):
-        """The block's TAC after substituting and folding constants."""
-        state = self.facts[proc.name][block.id]
-        lines = []
-        for quad in block.quads:
-            rewritten = self.rewrite(quad, state)
-            if rewritten is not None:
-                lines.append(rewritten)
-            state = transfer(quad, state)
-        return lines
+    def uses_for(self, proc):
+        return self.call_uses if proc.name == "main" else frozenset()
+
+    def _find_safe_reads(self, proc):
+        entry = definitely_assigned(proc)
+        for block in proc.blocks:
+            assigned = entry[block.id]
+            if assigned is None:
+                continue
+            assigned = set(assigned)
+            for quad in block.quads:
+                for arg in quad.args:
+                    if isinstance(arg, Name) and arg.node is not None and arg.name in assigned:
+                        self.safe_reads.add(id(arg.node))
+                if quad.dst is not None:
+                    assigned.add(quad.dst.name)
+
+    def _find_dead_stores(self, proc):
+        live_in, live_out = liveness(proc.blocks, self.uses_for(proc))
+        self.live[proc.name] = (live_in, live_out)
+        reachable = self.facts[proc.name]
+        dead = self.dead[proc.name] = {}
+        for block in proc.blocks:
+            after, _ = live_after_each(block.quads, live_out[block.id], self.uses_for(proc))
+            dead[block.id] = []
+            for i, quad in enumerate(block.quads):
+                if quad.origin is not None and quad.dst.name not in after[i]:
+                    dead[block.id].append(i)
+                    if reachable[block.id] is not None:   # unreachable code has its own warning
+                        self.dead_stores.append((proc, quad.origin))
+                        if harmless(quad.origin.value, self.safe_reads):
+                            self.removable.add(id(quad.origin))
+
+    # ----- the optimized view: constants substituted, then dead stores removed -----
+    def optimized(self, proc):
+        """({block id: rewritten quads}, {block id: indexes removed as dead stores})."""
+        if proc.name not in self._optimized:
+            facts = self.facts[proc.name]
+            quads, blocks = {}, []
+            for block in proc.blocks:
+                state = facts[block.id]
+                if state is None:
+                    continue   # unreachable: removed entirely
+                rewritten = []
+                for quad in block.quads:
+                    new = self.rewrite(quad, state)
+                    if new is not None:
+                        rewritten.append(new)
+                    state = transfer(quad, state)
+                quads[block.id] = rewritten
+                blocks.append(SimpleNamespace(id=block.id, quads=rewritten,
+                                              succ=[s for s in live_successors(block, state)]))
+            removed = {b.id: set() for b in blocks}
+            changed = True
+            while changed:   # deleting one dead store can make another one dead
+                changed = False
+                for b in blocks:
+                    b.quads = [q for i, q in enumerate(quads[b.id]) if i not in removed[b.id]]
+                _, live_out = liveness(blocks, self.uses_for(proc))
+                for b in blocks:
+                    kept = [i for i in range(len(quads[b.id])) if i not in removed[b.id]]
+                    after, _ = live_after_each([quads[b.id][i] for i in kept], live_out[b.id], self.uses_for(proc))
+                    for j, i in enumerate(kept):
+                        q = quads[b.id][i]
+                        if q.dst is not None and q.dst.name not in after[j] and harmless_quad(q, self.safe_reads):
+                            removed[b.id].add(i)
+                            changed = True
+            self._optimized[proc.name] = (quads, {k: sorted(v) for k, v in removed.items()})
+        return self._optimized[proc.name]
 
     def rewrite(self, quad, state):
-        def show(arg):
-            v = value_of(arg, state)
-            return str(v) if v is not None and not isinstance(v, list) else str(arg)
-
+        """The quad with known constants substituted and folded; None if it disappears."""
         if quad.dst is not None and quad.op in ("copy", "binop", "unop"):
             value = evaluate(quad, state)
             if value is not None:
-                return f"{quad.dst} = {value}"
+                return Quad("copy", quad.dst, [Const(value)], line=quad.line)
         if quad.op == "iffalse":
             cond = value_of(quad.args[0], state)
-            if cond is not None:
-                return f"goto {quad.target}" if cond == 0 else None   # never jumps: drop it
-        copy = Quad(quad.op, quad.dst, [Const(show(a)) if value_of(a, state) is not None else a
-                                        for a in quad.args],
-                    quad.target, quad.symbol, quad.line)
-        return str(copy)
+            if cond is not None:   # a decided branch: always taken, or never (then drop it)
+                return Quad("goto", target=quad.target, line=quad.line) if cond == 0 else None
+        args = []
+        for arg in quad.args:
+            value = value_of(arg, state)
+            args.append(Const(value) if value is not None and not isinstance(value, list) else arg)
+        return Quad(quad.op, quad.dst, args, quad.target, quad.symbol, quad.line)
 
+    def optimized_lines(self, proc, block):
+        """The block's TAC after substituting and folding constants (dead stores included)."""
+        return [str(q) for q in self.optimized(proc)[0].get(block.id, [])]
+
+    # ----- rendering -----
     def stats(self):
         quads = sum(len(b.quads) for p in self.procedures for b in p.blocks)
         blocks = sum(len(p.blocks) for p in self.procedures)
         unreachable = sum(1 for p in self.procedures for b in p.blocks if self.facts[p.name][b.id] is None)
+        removed = sum(len(v) for p in self.procedures for v in self.optimized(p)[1].values())
         return {"procedures": len(self.procedures), "blocks": blocks, "instructions": quads,
-                "constant_reads": len(self.constants), "unreachable_blocks": unreachable}
+                "constant_reads": len(self.constants), "unreachable_blocks": unreachable,
+                "dead_stores": len(self.dead_stores), "removed_stores": removed}
 
     def to_dict(self):
         procs = []
         for proc in self.procedures:
             facts = self.facts[proc.name]
+            live_in, live_out = self.live[proc.name]
+            _, removed = self.optimized(proc)
             procs.append({
                 "name": proc.name,
                 "blocks": [{
@@ -511,11 +707,15 @@ class IR:
                     "label": b.label,
                     "lines": [str(q) for q in b.quads],
                     "source_lines": [q.line for q in b.quads],
-                    "optimized": self.optimized_lines(proc, b) if facts[b.id] is not None else [],
+                    "optimized": self.optimized_lines(proc, b),
+                    "optimized_dead": removed.get(b.id, []),
+                    "dead": self.dead[proc.name][b.id],
                     "succ": b.succ,
                     "pred": b.pred,
                     "reachable": facts[b.id] is not None,
-                    "constants_in": dict(sorted(facts[b.id].items())) if facts[b.id] else {},
+                    "constants_in": {k: v for k, v in sorted((facts[b.id] or {}).items()) if not _is_temp(k)},
+                    "live_in": sorted(n for n in live_in[b.id] if not _is_temp(n)),
+                    "live_out": sorted(n for n in live_out[b.id] if not _is_temp(n)),
                 } for b in proc.blocks],
             })
         return {"procedures": procs, "stats": self.stats()}
@@ -525,18 +725,31 @@ class IR:
         out = []
         for proc in self.procedures:
             out.append(f"procedure {proc.name}")
+            live_in, live_out = self.live[proc.name]
             for b in proc.blocks:
                 facts = self.facts[proc.name][b.id]
                 head = f"  {b.id}" + (f" ({b.label})" if b.label else "")
                 head += f"  -> {', '.join(b.succ) if b.succ else 'exit'}"
                 if facts is None:
                     head += "  [unreachable]"
-                elif facts:
-                    head += "  in: " + ", ".join(f"{k}={v}" for k, v in sorted(facts.items()))
+                elif any(not _is_temp(k) for k in facts):
+                    head += "  constants in: " + ", ".join(f"{k}={v}" for k, v in sorted(facts.items())
+                                                           if not _is_temp(k))
                 out.append(head)
-                for line in (str(q) for q in b.quads):
-                    out.append(f"      {line}")
+                out.append(f"      live in: {_names(live_in[b.id])}   live out: {_names(live_out[b.id])}")
+                dead = self.dead[proc.name][b.id]
+                for i, q in enumerate(b.quads):
+                    out.append(f"      {q}" + ("    <- dead store" if i in dead else ""))
         return "\n".join(out)
+
+
+def _is_temp(name):
+    return name.startswith("%")
+
+
+def _names(names):
+    shown = sorted(n for n in names if not _is_temp(n))
+    return ", ".join(shown) if shown else "-"
 
 
 def build_ir(program):
@@ -546,3 +759,8 @@ def build_ir(program):
 def constant_reads(program):
     """{id(Var node): value} for every variable read that is provably constant."""
     return IR(program).constants
+
+
+def removable_stores(program):
+    """{id(Assign node)} for dead stores the optimizer can delete without changing behaviour."""
+    return IR(program).removable

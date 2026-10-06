@@ -15,7 +15,7 @@ computed by running the reference solutions when this module is imported.
 import difflib
 from dataclasses import dataclass, field
 
-from api import run_pipeline
+from api import lint, run_pipeline
 
 CHECK_MAX_STEPS = 200_000        # per test; generous for every reference solution
 CHECK_MAX_OUTPUT_LINES = 1_000
@@ -78,14 +78,26 @@ def run_test(source, test, **limits):
 
 def _flag_test_code_error(result, source, test):
     """Mark errors whose line is in the appended test code, not the player's code."""
-    err = result.get("error")
-    if not err or not err.get("line") or not test.epilogue:
+    if not test.epilogue:
         return
-    if err["line"] > _user_line_count(source):
-        err["in_test_code"] = True
-        err["message"] += (f" (found in the test code that runs after yours: `{test.epilogue}`."
-                           " Check that your code defines what the test uses, and that every"
-                           " '{' in your code is closed)")
+    last = _user_line_count(source)
+    for err in result.get("errors") or []:   # result["error"] is errors[0], so it is marked too
+        if err.get("line") and err["line"] > last:
+            err["in_test_code"] = True
+            err["message"] += (f" (found in the test code that runs after yours: `{test.epilogue}`."
+                               " Check that your code defines what the test uses, and that every"
+                               " '{' in your code is closed)")
+
+
+def lint_level(level, source):
+    """Static checks as the editor sees them while playing: the level's inputs exist, and its
+    test code is appended (so a function it calls isn't reported unused), but only problems
+    in the player's own lines are returned."""
+    test = level.tests[0]
+    found = lint(_program(source, test), predefined=test.inputs.keys())
+    last = _user_line_count(source)
+    return {key: [item for item in items if not item["line"] or item["line"] <= last]
+            for key, items in found.items()}
 
 
 def run_example(level, source):

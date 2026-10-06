@@ -166,6 +166,15 @@ class VM:
                 target = self.code[ins.arg]
                 self.frames.append(Frame(target.label or "?", return_addr=self.pc))
                 self.pc = ins.arg
+            elif op == "TAIL_CALL":
+                # `return f(...)`: nothing is left to do in this call, so f takes over its
+                # frame (keeping its return address) instead of stacking a new one.
+                if not self.frames:
+                    raise VMError("tail call outside a function", ins.line)
+                frame = self.frames[-1]
+                frame.name = self.code[ins.arg].label or "?"
+                frame.locals = {}
+                self.pc = ins.arg
             elif op == "RET":
                 if not self.frames:
                     raise VMError("return outside a function", ins.line)

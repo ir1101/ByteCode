@@ -47,6 +47,7 @@ class AppTests(unittest.TestCase):
         self.assertIn('id="tab-symbols"', html)
         self.assertIn('id="tab-ir"', html)
         self.assertIn('<option value="arrays.ml">', html)
+        self.assertIn('<option value="dataflow.ml">', html)
 
     def test_each_stage_error_is_returned_with_its_line(self):
         cases = [
@@ -128,6 +129,28 @@ class AppTests(unittest.TestCase):
             parts = ip.split(".")
             self.assertEqual(len(parts), 4, ip)
             self.assertFalse(ip.startswith(("127.", "0.", "169.254.")), ip)
+
+    def test_lint_reports_problems_without_running(self):
+        r = self.client.post("/lint", json={"source": "x = 1\ny = 2\nprint q;"}).get_json()
+        self.assertEqual([(e["stage"], e["line"]) for e in r["errors"]], [("parse", 1), ("parse", 2)])
+        r = self.client.post("/lint", json={"source": "x = 0;\nx = 1;\nprint x;"}).get_json()
+        self.assertEqual(r["errors"], [])
+        self.assertEqual([w["code"] for w in r["warnings"]], ["dead-store"])
+
+    def test_lint_in_a_level_knows_its_inputs_and_test_code(self):
+        r = self.client.post("/lint", json={"level": "c1", "source": "print n;"}).get_json()
+        self.assertEqual(r, {"errors": [], "warnings": []})
+        # fact() isn't written yet: the test code that calls it isn't the player's problem yet
+        r = self.client.post("/lint", json={"level": "c6", "source": "# nothing yet\n"}).get_json()
+        self.assertEqual(r["errors"], [])
+
+    def test_lint_bad_requests(self):
+        self.assertEqual(self.client.post("/lint", json={"code": "x"}).status_code, 400)
+        self.assertEqual(self.client.post("/lint", json={"level": "zz", "source": ""}).status_code, 404)
+
+    def test_run_returns_every_parse_error(self):
+        r = self.client.post("/run", json={"source": "x = 1\ny = 2\nprint x + y;"}).get_json()
+        self.assertEqual([e["line"] for e in r["errors"]], [1, 2])
 
     def test_oversized_body_rejected(self):
         resp = self.client.post("/run", data="x" * 1_100_000, content_type="application/json")

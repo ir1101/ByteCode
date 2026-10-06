@@ -121,5 +121,33 @@ class SymbolTableTests(unittest.TestCase):
         self.assertEqual(r["warnings"][0]["code"], "unused")
 
 
+class DeadStoreWarningTests(unittest.TestCase):
+    def warnings(self, source):
+        return [(w["line"], w["code"]) for w in analyze(parse(tokenize(source))).to_dict()["warnings"]]
+
+    def test_overwritten_value(self):
+        self.assertEqual(self.warnings("x = 0;\nx = 5;\nprint x;"), [(1, "dead-store")])
+
+    def test_initialised_then_set_on_every_branch(self):
+        src = "c = 1;\nx = 0;\nif c { x = 1; } else { x = 2; }\nprint x;"
+        self.assertEqual(self.warnings(src), [(2, "dead-store")])
+
+    def test_value_left_at_the_end(self):
+        self.assertEqual(self.warnings("x = 1;\nprint x;\nx = 2;"), [(3, "dead-store")])
+
+    def test_never_read_at_all_is_only_unused(self):
+        self.assertEqual(self.warnings("x = 1;\nx = 2;"), [(1, "unused")])
+
+    def test_scope_trap_line_keeps_its_own_warning(self):
+        src = "total = 0;\nfunc add(x) { total = total + x; }\nadd(1);\nprint total;"
+        self.assertEqual(self.warnings(src), [(2, "scope-trap")])
+
+    def test_examples_have_no_warnings(self):
+        for name in ("demo.ml", "functions.ml", "optimize.ml", "arrays.ml", "dataflow.ml"):
+            with self.subTest(name=name):
+                with open(f"{ROOT}/examples/{name}", encoding="utf-8") as f:
+                    self.assertEqual(self.warnings(f.read()), [])
+
+
 if __name__ == "__main__":
     unittest.main()

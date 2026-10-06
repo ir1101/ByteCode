@@ -153,7 +153,7 @@ class SameBehaviourTests(unittest.TestCase):
         "for i = 0; i < 6; i = i + 1 { if i == 1 or i == 3 { continue; } if i > 4 { break; } print i; }",
         "func pos(x) { return x > 0; } if pos(2) and pos(-1) { print 1; } else { print 0; }",
         "func side(x) { print x; return x; } print 0 and side(1); print side(2) or side(3);",
-        "func loop(n) { return loop(n + 1); } print loop(0);",
+        "func loop(n) { return 1 + loop(n + 1); } print loop(0);",
         # constant propagation: joins, loops, functions, possibly-undefined variables
         "x = 3;\ny = x * x;\nif y > 5 { z = y - x; } else { z = 0; }\nprint z; print x + y + z;",
         "i = 0; total = 0; while i < 5 { total = total + i; i = i + 1; } print total; print i;",
@@ -173,6 +173,26 @@ class SameBehaviourTests(unittest.TestCase):
         # compile errors must not be hidden by folding away the code that contains them
         "print 0 and missing();",
         "print 1 or f(1, 2); func f(a) { return a; }",
+        # dead-store elimination must keep anything that can fail or has side effects
+        "x = 5; x = 6; print x;",
+        "a = [1]; b = a; b[0] = 5; print a;",
+        "x = [1]; y = x; print 2;",
+        "n = 0;\nif n { y = 1; }\nx = y;\nprint 1;",
+        "a = [1, 2];\nx = a + 1;\nprint 0;",
+        "d = 0;\nx = 7 / d;\nprint 0;",
+        "a = [];\nx = a[0];\nprint 0;",
+        "func f() { print 7; return 1; } x = f(); print 0;",
+        "func f(c) { if c { v = 1; } w = v; return 0; } print f(1); print f(0);",
+        "v = 9; func f(c) { if c { v = 1; } w = v; return w; } print f(1); print f(0);",
+        "g = 1; func f() { return g; } g = 2; print f();",
+        "i = 0; while i < 3 { x = i; i = i + 1; } print i;",
+        "t1 = 100;\ny = 2 * 3 + t1;\nprint y;",
+        "x = 1; print x == [1]; y = [x] == [1]; print 3;",
+        # tail calls that finish well within the limits behave exactly the same
+        "func gcd(a, b) { if b == 0 { return a; } return gcd(b, a % b); } print gcd(1071, 462);",
+        "func even(n) { if n == 0 { return 1; } return odd(n - 1); } "
+        "func odd(n) { if n == 0 { return 0; } return even(n - 1); } print even(10); print odd(7);",
+        "func f(n) { if n > 0 { return f(n - 1); } return 1 / n; } print f(3);",
     ]
 
     def outcome(self, source, optimize):
@@ -196,6 +216,60 @@ class SameBehaviourTests(unittest.TestCase):
                     src = f.read()
                 self.assertEqual(self.outcome(src, True), self.outcome(src, False))
                 self.assertLessEqual(len(compile_source(src, True)), len(compile_source(src, False)))
+
+
+class DeadStoreTests(unittest.TestCase):
+    def test_propagation_leaves_only_the_print(self):
+        code = compile_source("x = 10;\ny = x * 2;\nprint y;", optimize=True)
+        self.assertEqual(code, [I("PUSH", 20), I("PRINT"), I("HALT")])
+
+    def test_overwritten_initial_value_is_removed(self):
+        code = compile_source("x = [1, 2];\nx = [3];\nprint x;", optimize=True)
+        self.assertEqual([ins.op for ins in code].count("BUILD_LIST"), 1)
+
+    def test_chains_of_dead_copies_are_removed(self):
+        code = compile_source("a = [1];\nb = a;\nc = b;\nprint 0;", optimize=True)
+        self.assertEqual(code, [I("PUSH", 0), I("PRINT"), I("HALT")])
+
+    def test_stores_that_can_fail_are_kept(self):
+        for src in ("x = n / 2;\nprint 0;", "x = a[0];\nprint 0;", "x = f();\nprint 0;\nfunc f() { return 1; }"):
+            with self.subTest(src=src):
+                self.assertIn("STORE", [ins.op for ins in compile_source(src, optimize=True)])
+
+    def test_dead_stores_in_loops_and_functions(self):
+        code = compile_source("func f() { tmp = 5; return 1; }\nprint f();", optimize=True)
+        self.assertNotIn("STORE", [ins.op for ins in code])
+
+
+class TailCallTests(unittest.TestCase):
+    SUM = "func sum(n, acc) { if n == 0 { return acc; } return sum(n - 1, acc + n); }\nprint sum(5000, 0);"
+
+    def test_return_of_a_call_becomes_tail_call(self):
+        code = compile_source("func f(n) { if n == 0 { return 0; } return f(n - 1); }\nprint f(3);", optimize=True)
+        ops = [ins.op for ins in code]
+        self.assertIn("TAIL_CALL", ops)
+        self.assertEqual(ops.count("CALL"), 1)   # the first call, from top-level code
+
+    def test_a_call_whose_result_is_used_is_not_a_tail_call(self):
+        code = compile_source("func f(n) { if n == 0 { return 1; } return n * f(n - 1); }\nprint f(3);", optimize=True)
+        self.assertNotIn("TAIL_CALL", [ins.op for ins in code])
+
+    def test_deep_tail_recursion_only_works_optimized(self):
+        self.assertEqual(run_source(self.SUM, optimize=True), ["12502500"])
+        with self.assertRaises(VMError) as ctx:
+            run_source(self.SUM, optimize=False)
+        self.assertIn("maximum call depth", ctx.exception.message)
+
+    def test_dataflow_example(self):
+        with open(os.path.join(ROOT, "examples", "dataflow.ml"), encoding="utf-8") as f:
+            src = f.read()
+        self.assertEqual(run_source(src, optimize=True), ["42", "55", "12502500", "21"])
+        with self.assertRaises(VMError):   # 5000 nested calls without tail calls
+            run_source(src, optimize=False)
+
+    def test_tail_call_keeps_the_callers_place(self):
+        src = "func g(x) { return x * 10; }\nfunc f(x) { return g(x + 1); }\nprint 1 + f(2) + 100;"
+        self.assertEqual(run_source(src, optimize=True), ["131"])
 
 
 if __name__ == "__main__":

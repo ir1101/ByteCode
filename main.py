@@ -77,7 +77,8 @@ def main(argv=None):
 
         VM(code, on_step=text_tracer(sys.stdout) if args.trace else None).run()
     except MiniLangError as e:
-        print(e, file=sys.stderr)
+        for err in e.errors:   # the lexer, parser and semantic analysis report every error they find
+            print(err, file=sys.stderr)
         return 1
     return 0
 

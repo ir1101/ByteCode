@@ -6,11 +6,14 @@ classic compiler stage:
 
 ```
 source ─► lexer.py ─► parser.py ─► semantic.py ─► ir.py ─────────► optimizer.py ─► compiler.py ─► vm.py
-          tokens      AST          symbol tables   three-address    propagate +     bytecode       output
-                                   errors and      code, basic      fold, then
-                                   warnings        blocks, CFG,     peephole
-                                                   constant facts
+          tokens      AST          symbol tables   three-address    propagate,      bytecode       output
+                                   errors and      code, basic      fold, drop
+                                   warnings        blocks, CFG,     dead stores,
+                                                   constants,       peephole +
+                                                   liveness         tail calls
 ```
+
+The lexer, parser and semantic analysis **recover from errors**, so one run reports every mistake in the file, with "did you mean" hints for misspelled keywords and names.
 
 ## Quick start
 
@@ -38,15 +41,17 @@ A small Flask app, laid out like Compiler Explorer. The code editor (CodeMirror,
 - **Tokens:** a table of each token's type, value and line.
 - **AST:** a collapsible tree, or the same text dump that `--debug` prints.
 - **Symbols:** the warnings from semantic analysis, then the symbol table: every global, and for each function its parameters, locals and the globals it reads. Warning lines are also marked amber in the editor.
-- **IR:** the three-address code split into basic blocks, drawn as a control-flow graph. Fall-through edges run straight down, jumps on the right, and loop back-edges dashed on the left. Each block shows the constants known on entry, and a toggle shows the code after constant propagation.
+- **IR:** the three-address code split into basic blocks, drawn as a control-flow graph. Fall-through edges run straight down, jumps on the right, and loop back-edges dashed on the left. Each block lists its **live variables** on entry and exit, and dead stores are tagged. The **Optimized** toggle shows the code after constant propagation, with the stores that dead-store elimination removes struck through.
 - **Bytecode:** the numbered instructions, with clickable jump targets and a view of the code before the optimizer ran.
 - **Output:** what the program printed, plus a step-through of execution in the style of Python Tutor. It shows the operand stack, the global frame and each call frame at every VM step.
 
-Hovering a row in any tab highlights its source line. Errors appear in a red box in Output, with their line number. If the CDN can't be reached, the editor falls back to a plain text box and everything still works.
+Hovering a row in any tab highlights its source line. Errors appear in a red box in Output, every one with its line number. If the CDN can't be reached, the editor falls back to a plain text box and everything still works.
+
+**Checking as you type.** A moment after you stop typing, the editor sends the code to `/lint`, which runs only the lexer, parser and semantic analysis. Problems get a wavy underline (red for errors, amber for warnings) and a dot in the gutter; hover either to read the message. The pill above the editor counts them, and clicking it jumps to the first. In a level, the level's inputs count as defined.
 
 | File | Role |
 |---|---|
-| `app.py` | `GET /` serves the page; `POST /run` with `{"source": "..."}` returns the JSON described below |
+| `app.py` | `GET /` serves the page; `POST /run` with `{"source": "..."}` returns the JSON described below; `POST /lint` returns `{"errors": [...], "warnings": [...]}` without compiling or running |
 | `templates/index.html` | the single page |
 | `static/style.css`, `static/app.js` | dark theme and rendering; the browser never compiles anything itself |
 | `static/game.js` | levels, stars, XP, achievements and toasts (see [Game mode](#game-mode)) |
@@ -64,8 +69,10 @@ Hovering a row in any tab highlights its source line. Errors appear in a red box
   "symbols":  {"globals": [...], "functions": [...], "warnings": [...]},  // semantic analysis
   "warnings": [{"line": 3, "code": "scope-trap", "message": "..."}],  // also in symbols
   "ir":       {"procedures": [{"name": "main", "blocks": [{"id": "B0", "lines": [...], "optimized": [...],
-                "succ": ["B1"], "pred": [], "reachable": true, "constants_in": {"x": 10}}, ...]}],
-               "stats": {"blocks": 4, "constant_reads": 2, ...}},
+                "succ": ["B1"], "pred": [], "reachable": true, "constants_in": {"x": 10},
+                "live_in": [], "live_out": ["i"],                     // liveness (temps left out)
+                "dead": [0], "optimized_dead": [0, 1]}, ...]}],       // indexes of dead stores
+               "stats": {"blocks": 4, "constant_reads": 2, "dead_stores": 1, "removed_stores": 2, ...}},
   "bytecode": [{"addr": 0, "op": "PUSH", "arg": 5, "line": 1,
                 "label": null}, ...],                                 // label = "fact(n)" on a function's first instruction
   "bytecode_unoptimized": [...],
@@ -79,7 +86,8 @@ Hovering a row in any tab highlights its source line. Errors appear in a red box
                 "next_pc": 1,
                 "lines_printed": 0}, ...],                            // output[:lines_printed] is visible at this step
   "trace_truncated": false,
-  "error": null  // or {"stage": "lex|parse|semantic|compile|runtime|input", "message": "...", "line": 3}
+  "error": null,  // or {"stage": "lex|parse|semantic|compile|runtime|input", "message": "...", "line": 3}
+  "errors": []    // every error of the failing stage; error is errors[0]
 }
 ```
 
@@ -91,7 +99,7 @@ Stages that finished before an error still return their data, and stages that ne
 |---|---|---|
 | Source length | 100,000 characters | error with stage `input` |
 | Execution steps | 1,000,000 | runtime error (catches infinite loops) |
-| Nested calls | 1,000 | runtime error (catches infinite recursion) |
+| Nested calls | 1,000 | runtime error (catches infinite recursion; tail calls don't count, see [Optimizer](#optimizer)) |
 | Printed lines | 10,000 | runtime error |
 | Trace steps recorded | 5,000 | the program keeps running; `trace_truncated` is set to `true` |
 | Nesting depth | Python's recursion limit | `parse`, `semantic` or `compile` error: "nested too deeply" |
@@ -132,6 +140,7 @@ Par values and expected outputs come from reference solutions that run when the 
 ```
 # comments start with '#'
 x = 10;                          # assignment (variables need no declaration)
+x += 5;                          # shorthand for x = x + 5 (also -=, *=, /=, %=)
 print x * (2 + 3) % 4;           # print one value per line; % is the remainder
 
 if x > 5 and not (x == 7) {      # no parentheses needed around the condition; braces are required
@@ -144,7 +153,7 @@ if x > 5 and not (x == 7) {      # no parentheses needed around the condition; b
 
 while x > 0 { x = x - 1; }
 
-for i = 0; i < 10; i = i + 1 {   # init; condition; update (each part optional)
+for i = 0; i < 10; i += 1 {      # init; condition; update (each part optional)
     if i == 2 { continue; }      # jumps to the update step
     if i == 5 { break; }         # leaves the innermost loop
     print i;
@@ -177,6 +186,7 @@ print grid[1][0];                # 3
   - A function can read global variables. Assigning to a name inside a function creates a local and never changes the global.
   - A function can't see its caller's locals.
   - Falling off the end of a function, or a bare `return;`, returns `0`.
+- **Compound assignment** is syntactic sugar: the parser turns `x += e` into `x = x + e`, and `a[i] += e` into `a[i] = a[i] + e`. That means the target and index are evaluated twice, so `a[f()] += 1` calls `f` twice.
 - **Checked before anything runs** (semantic errors): undefined variables and functions, wrong numbers of arguments, duplicate or built-in function names, duplicate parameters, and `return`, `break` or `continue` in the wrong place. See [Semantic analysis](#semantic-analysis) for the warnings too.
 
 ### Grammar (lowest to highest precedence)
@@ -189,7 +199,7 @@ statement  := assignment ";" | "print" expr ";" | call ";"
             | "while" expr block
             | "for" assignment? ";" expr? ";" assignment? block
             | "return" expr? ";" | "break" ";" | "continue" ";" | block
-assignment := IDENT ("[" expr "]")* "=" expr
+assignment := IDENT ("[" expr "]")* ("=" | "+=" | "-=" | "*=" | "/=" | "%=") expr
 block      := "{" statement* "}"
 expr       := and_expr ("or" and_expr)*
 and_expr   := not_expr ("and" not_expr)*
@@ -217,6 +227,7 @@ call       := IDENT "(" (expr ("," expr)*)? ")"            # len() and append() 
 | `JUMP addr` | jump to `addr` |
 | `JUMP_IF_FALSE addr` | pop; jump to `addr` if the value was `0` |
 | `CALL addr` | push a new frame that remembers the return address, then jump to `addr` |
+| `TAIL_CALL addr` | reuse the current frame (keeping its return address) and jump to `addr`; made by the optimizer for `return f(...)` |
 | `RET` | pop the return value, drop the frame, jump back to the caller, push the value |
 | `BUILD_LIST n` | pop `n` values, push a new list of them |
 | `INDEX` | pop `i`, pop a list, push `list[i]` |
@@ -235,6 +246,24 @@ Every instruction records the source line it came from, so runtime errors can re
 
 **Frames and the stack:** the VM keeps one operand stack shared by all calls, plus a **call stack of frames**. Each frame holds its own locals and its return address. Recursion runs on this call stack, not on Python's, and it is limited to 1,000 nested calls.
 
+## Error recovery
+
+A compiler that stops at the first mistake makes you fix-and-rerun once per typo, so the front end keeps going and reports everything in one run:
+
+| Stage | Strategy | Example |
+|---|---|---|
+| Lexer | skip the bad characters, keep lexing | `a && b` → one error for `'&&'` with the hint "MiniLang writes 'and'" |
+| Parser | **phrase level:** a `;` missing at the end of a line is reported, then the parser carries on as if it were there | three lines without `;` give three errors |
+| Parser | **panic mode:** after any other error, skip tokens until a statement can start again (after a `;`, or at `{`, `}` or a statement keyword) | `x = 1 +;` then `print x;` → one error, and `print x;` is still checked |
+| Semantic | record the error and keep analysing; an unknown name is reported once per scope | every undefined name in the file |
+
+Only the first error on each line is kept, since the rest are usually knock-on effects, and the parser stops after 20. A stage that found errors stops the pipeline, so you see every lexer error, or every parse error, or every semantic error.
+
+**Hints.** Errors suggest what was probably meant:
+- A misspelled keyword: `whiel x < 3 {` → *did you mean 'while'?* The match uses `difflib`.
+- A misspelled name: `print cout;` → *did you mean 'count'?*, and `lenght(a)` → *did you mean 'len'?*
+- Habits from other languages: `elif`, `def`, `let`, `true`, `&&`, `"strings"`, `size(a)`, and `if x = 1` (*use '=='*).
+
 ## Semantic analysis
 
 `semantic.py` runs after the parser and before any code is generated. It makes two passes over the AST:
@@ -242,7 +271,7 @@ Every instruction records the source line it came from, so runtime errors can re
 1. **Declarations.** It collects every function, so calls may come before definitions, and every variable each scope assigns. The result is a symbol table for the global scope and one for each function, holding its parameters and locals.
 2. **Uses.** It walks the code in order, resolving every name against those tables. At the same time it tracks which variables are **definitely assigned** at each point. This is a must-analysis: after an `if`/`else`, only names both branches assign count, and after a loop, only names assigned before it.
 
-**Errors** reject the program before it runs: undefined variables and functions, argument counts, duplicate or built-in names, and misplaced `return`, `break` or `continue`. **Warnings** let it still run:
+**Errors** reject the program before it runs: undefined variables and functions, argument counts, duplicate or built-in names, and misplaced `return`, `break` or `continue`. All of them are reported in one run (see [Error recovery](#error-recovery)). **Warnings** let it still run:
 
 | Warning | Example |
 |---|---|
@@ -250,8 +279,9 @@ Every instruction records the source line it came from, so runtime errors can re
 | scope trap | `func add(v) { total = total + v; }` reads the global `total`, but the assignment creates a separate local, so the global never changes |
 | unreachable | code after `return`, `break` or `continue` |
 | unused | a variable assigned but never read, an unused parameter, a function never called |
+| dead store | `x = 0; if c { x = 1; } else { x = 2; }`: the `0` is never read, because both branches overwrite it (found by liveness analysis in `ir.py`) |
 
-## Intermediate representation and constant propagation
+## Intermediate representation and data-flow analysis
 
 `ir.py` lowers the AST to **three-address code**: simple instructions with at most one operator, such as `t1 = n * 2`, `x = t1 + 1` and `if_false t2 goto L3`. Each function, and the top-level code (`main`), is a separate procedure.
 
@@ -259,20 +289,39 @@ Every instruction records the source line it came from, so runtime errors can re
 - **Constant propagation (Kildall's algorithm).** For every block it computes which variables hold a known constant on entry. That's the *meet* of its predecessors' exit states: a variable stays constant only if every incoming path agrees on its value. Blocks are revisited until nothing changes, and loops converge because a loop variable drops out of the meet at the back edge.
 - **Branch pruning.** A branch whose condition is a known constant only follows its taken edge, so a dead branch doesn't spoil the facts at the join.
 - **Safety.** Nothing is known when a procedure starts, so parameters, inputs and possibly-undefined variables are never assumed constant.
+- **Liveness (backward).** A variable is *live* at a point if its current value may still be read on some path from there: `live_out(B)` is the union of `live_in` over B's successors, and `live_in(B) = use(B) ∪ (live_out(B) − def(B))`. A store to a variable that isn't live right after it is a **dead store**. A call in `main` counts as reading every global that some function may read.
+- **Definite assignment (forward).** The variables that surely hold a value at each point, with intersection as the meet. Reading one of them can never fail with "undefined variable", which tells the optimizer that deleting such a read is safe.
 
-The results feed the optimizer. `python main.py file.ml --debug` prints the IR, and the playground's IR tab draws it.
+The three analyses show the classic combinations:
+
+| Analysis | Direction | Meet | Question |
+|---|---|---|---|
+| Constant propagation | forward | agree on the value | which variable is a known constant here? |
+| Definite assignment | forward | intersection (*must*) | which variables surely exist here? |
+| Liveness | backward | union (*may*) | which values may still be read from here? |
+
+Temporaries display as `t1`, `t2`, … but their internal key is `%t1`. `%` can't appear in a MiniLang name, so a user variable called `t1` never gets mixed up with them.
+
+The results feed the optimizer. `python main.py file.ml --debug` prints the IR, with live variables for every block, and the playground's IR tab draws it.
 
 ## Optimizer
 
-The optimizer is on by default; `--no-opt` switches it off. It never changes what a program prints or which error it raises, and the tests check this by running a list of tricky programs both ways.
+The optimizer is on by default; `--no-opt` switches it off. It never changes what a program prints or which error it raises, and the tests check this by running a list of tricky programs both ways. The one deliberate exception is tail calls (below), which let deep recursion run that would otherwise hit the call-depth limit.
 
-1. **Constant propagation** (on the control-flow graph, from `ir.py`): every variable read that is provably the same constant on every path becomes that constant. After `x = 10; y = x * 2;`, reading `y` becomes `20`, and a later `if y > 5` turns into a constant branch. This takes `demo.ml` from 82 to 62 instructions.
+1. **Constant propagation** (on the control-flow graph, from `ir.py`): every variable read that is provably the same constant on every path becomes that constant. After `x = 10; y = x * 2;`, reading `y` becomes `20`, and a later `if y > 5` turns into a constant branch.
 2. **Constant folding** (on the AST): `2 * 3 + 4` becomes `10`, `not 0` becomes `1`, and `0 and x` becomes `0`. `x / 0` and `x % 0` are deliberately left alone so the error still happens at runtime.
-3. **Peephole pass** (on the bytecode), repeated until nothing changes:
+3. **Dead-store elimination** (liveness from `ir.py`, run on the folded tree): an assignment whose value is never read is deleted. This only happens if its right-hand side can't fail and has no side effects: a constant, a list of constants, or a variable that is definitely assigned. `x = a / b`, `x = a[i]` and `x = f()` are always kept, because they might raise an error or print. The pass repeats, since removing `y = x` can make the earlier `x = [1]` dead too. Together with propagation, `x = 10; y = x * 2; print y;` becomes just `PUSH 20; PRINT; HALT`.
+4. **Peephole pass** (on the bytecode), repeated until nothing changes:
    - A constant that goes straight into a conditional jump is resolved now. This removes `if 0` and `while 0`, and lets `and`/`or` conditions jump directly to the right branch.
    - A jump that lands on another `JUMP` goes straight to the final target (**jump threading**).
    - A `JUMP` to the very next instruction is removed.
    - Code that can never be reached is removed. This includes code after a `return` and functions that are never called.
+   - **Tail calls:** `CALL f` followed by `RET` becomes `TAIL_CALL f`. `return f(x);` has nothing left to do after `f` returns, so `f` reuses the current frame and returns straight to our caller. A tail-recursive `sum(5000, 0)` runs in one frame; with `--no-opt` it fails with "maximum call depth of 1000 exceeded".
+
+| Example | Unoptimized | Folding + peephole only | Full optimizer |
+|---|---|---|---|
+| `demo.ml` | 87 | 82 | 58 |
+| `optimize.ml` | 77 | 39 | 33 |
 
 Semantic analysis runs on the original tree before any of this, so `0 and missing()` still reports "undefined function" even though folding removes the call.
 
@@ -280,21 +329,21 @@ Semantic analysis runs on the original tree before any of this, so `0 and missin
 
 | File | Role |
 |---|---|
-| `lexer.py` | characters → `Token(type, value, line)`, ending with an `EOF` token |
+| `lexer.py` | characters → `Token(type, value, line)`, ending with an `EOF` token; skips bad characters and reports them all |
 | `ast_nodes.py` | AST node classes, `dump()` (readable tree), `to_dict()` (JSON) |
-| `parser.py` | recursive descent parser, tokens → AST |
-| `semantic.py` | symbol tables, scope checks, definite-assignment warnings |
-| `ir.py` | three-address code, basic blocks, control-flow graph, constant propagation |
-| `optimizer.py` | propagation-driven constant folding and peephole optimization |
+| `parser.py` | recursive descent parser, tokens → AST; phrase-level and panic-mode error recovery, keyword hints, `+=` sugar |
+| `semantic.py` | symbol tables, scope checks, definite-assignment and dead-store warnings, "did you mean" hints |
+| `ir.py` | three-address code, basic blocks, control-flow graph, constant propagation, liveness, definite assignment |
+| `optimizer.py` | constant propagation and folding, dead-store elimination, peephole optimization and tail calls |
 | `compiler.py` | AST → bytecode, back-patched jumps and calls, compile-time checks; `disassemble()` |
 | `vm.py` | stack VM with a call stack of frames; step, output and call-depth limits; `on_step` hook used for tracing |
-| `errors.py` | `LexError`, `ParseError`, `SemanticError`, `CompileError`, `VMError`; each carries a line number |
+| `errors.py` | `LexError`, `ParseError`, `SemanticError`, `CompileError`, `VMError`; each carries a line number, and `errors` lists every error its stage found |
 | `main.py` | command-line driver (`--debug`, `--trace`, `--no-opt`) |
-| `api.py` | runs the whole pipeline and returns JSON-ready data |
-| `app.py` | Flask web playground: serves the page, `/run` and `/check` |
+| `api.py` | runs the whole pipeline and returns JSON-ready data; `lint()` runs only the static checks |
+| `app.py` | Flask web playground: serves the page, `/run`, `/check` and `/lint` |
 | `levels.py` | game levels, the test harness and star scoring |
 | `templates/`, `static/` | the playground's page, stylesheet and scripts (`app.js` for the pipeline view, `game.js` for the game) |
-| `tests/` | 202 unit tests: every stage, semantic analysis, the IR, the optimizer (including same-behaviour checks), arrays, the API, the levels and the Flask app |
-| `examples/` | `demo.ml`, `optimize.ml`, `functions.ml` (recursion, for, break/continue), `arrays.ml` (lists, `%`, a sieve) |
+| `tests/` | 260 unit tests: every stage, error recovery and hints, semantic analysis, the IR and its analyses, the optimizer (including same-behaviour checks), tail calls, arrays, the API, the levels and the Flask app |
+| `examples/` | `demo.ml`, `optimize.ml`, `functions.ml` (recursion, for, break/continue), `arrays.ml` (lists, `%`, a sieve), `dataflow.ml` (liveness, dead stores, `+=`, tail calls) |
 | `.github/workflows/tests.yml` | GitHub Actions: runs the test suite on every push |
 | `requirements.txt` | Flask, the only dependency (for the web playground) |

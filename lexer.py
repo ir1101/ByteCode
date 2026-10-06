@@ -1,6 +1,10 @@
-"""Hand-written lexer: turns MiniLang source text into a list of Tokens."""
+"""Hand-written lexer: turns MiniLang source text into a list of Tokens.
 
-from errors import LexError
+Error recovery: a character that can't start a token is reported, skipped,
+and lexing carries on, so one run lists every bad character in the file.
+"""
+
+from errors import LexError, raise_all
 
 # Token types
 INT = "INT"
@@ -13,8 +17,28 @@ KEYWORDS = {"if", "else", "while", "for", "break", "continue", "print",
             "and", "or", "not", "func", "return"}
 
 # Two-character operators must be tried before their one-character prefixes.
-TWO_CHAR_OPS = {"==", "!=", "<=", ">="}
+# x += e is shorthand for x = x + e (the parser expands it).
+TWO_CHAR_OPS = {"==", "!=", "<=", ">=", "+=", "-=", "*=", "/=", "%="}
 ONE_CHAR_OPS = set("+-*/%<>=(){}[];,")
+
+# What a programmer coming from another language probably meant.
+CHAR_HINTS = {
+    "&": "MiniLang writes 'and' instead of '&&'",
+    "|": "MiniLang writes 'or' instead of '||'",
+    "!": "MiniLang writes 'not x', and '!=' for 'not equal'",
+    '"': "MiniLang has no strings, only whole numbers and lists",
+    "'": "MiniLang has no strings, only whole numbers and lists",
+    ".": "MiniLang numbers are whole numbers, and a list's length is len(a)",
+    ":": "MiniLang blocks use braces: if x > 1 { ... }",
+}
+
+
+def is_digit(ch):
+    return "0" <= ch <= "9"  # ASCII only: int() can't read digits such as superscript two
+
+
+def can_start_token(ch):
+    return ch in " \t\r\n#_" or is_digit(ch) or ch.isalpha() or ch in ONE_CHAR_OPS
 
 
 class Token:
@@ -38,6 +62,7 @@ class Lexer:
         self.source = source
         self.pos = 0
         self.line = 1
+        self.errors = []
 
     def peek(self, offset=0):
         i = self.pos + offset
@@ -60,7 +85,7 @@ class Lexer:
             elif ch == "#":  # comment runs to end of line
                 while self.pos < len(self.source) and self.peek() != "\n":
                     self.advance()
-            elif ch.isdigit():
+            elif is_digit(ch):
                 tokens.append(self.read_number())
             elif ch.isalpha() or ch == "_":
                 tokens.append(self.read_word())
@@ -71,19 +96,36 @@ class Lexer:
             elif ch in ONE_CHAR_OPS:
                 tokens.append(Token(OP, self.advance(), self.line))
             else:
-                raise LexError(f"unexpected character {ch!r}", self.line)
+                self.skip_unexpected()
 
+        if self.errors:
+            raise_all(self.errors)
         tokens.append(Token(EOF, None, self.line))
         return tokens
+
+    def skip_unexpected(self):
+        """Report a run of characters that can't start a token (such as '&&'), then skip it."""
+        start, line = self.pos, self.line
+        self.advance()
+        while self.pos < len(self.source) and not can_start_token(self.peek()):
+            self.advance()
+        bad = self.source[start:self.pos]
+        hint = CHAR_HINTS.get(bad[0])
+        message = f"unexpected character {bad!r}" if len(bad) == 1 else f"unexpected characters {bad!r}"
+        self.errors.append(LexError(f"{message} ({hint})" if hint else message, line))
 
     def read_number(self):
         line = self.line
         start = self.pos
-        while self.peek().isdigit():
+        while is_digit(self.peek()):
             self.advance()
+        digits = self.source[start:self.pos]
         if self.peek().isalpha() or self.peek() == "_":
-            raise LexError(f"invalid number literal starting {self.source[start:self.pos + 1]!r}", line)
-        return Token(INT, int(self.source[start:self.pos]), line)
+            while self.peek().isalnum() or self.peek() == "_":
+                self.advance()  # skip the whole word, so lexing resumes after it
+            self.errors.append(LexError(f"invalid number literal {self.source[start:self.pos]!r} "
+                                        "(a name can't start with a digit)", line))
+        return Token(INT, int(digits), line)
 
     def read_word(self):
         line = self.line

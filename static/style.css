@@ -283,6 +283,32 @@ code, pre, kbd, .CodeMirror, .panel-scroll, .pipeline, .select, .editor-fallback
 .cm-line-error { background: var(--danger-soft); box-shadow: inset 2px 0 0 var(--danger); }
 .cm-line-error-gutter .CodeMirror-linenumber { color: var(--danger); }
 
+/* Live checking: wavy underlines and a dot in the gutter. */
+.lint-gutter { width: 12px; }
+.lint-dot { display: block; width: 7px; height: 7px; margin: 9px 0 0 4px; border-radius: 50%; cursor: help; }
+.lint-dot.is-error { background: var(--danger); }
+.lint-dot.is-warning { background: var(--warn); }
+.cm-problem-error { text-decoration: underline wavy var(--danger); text-decoration-skip-ink: none; text-underline-offset: 3px; }
+.cm-problem-warning { text-decoration: underline wavy var(--warn); text-decoration-skip-ink: none; text-underline-offset: 3px; }
+
+.problems {
+  padding: 2px 9px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: none;
+  color: var(--muted);
+  font: 500 0.75rem/1.4 var(--font-sans);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color 150ms var(--ease);
+}
+.problems:disabled { cursor: default; }
+.problems.is-clean { border-color: transparent; }
+.problems.is-clean::before { content: "\2713  "; color: var(--accent); }
+.problems.is-error { border-color: var(--danger-border); background: var(--danger-soft); color: var(--danger); }
+.problems.is-warning { border-color: var(--warn-border); background: var(--warn-soft); color: var(--warn); }
+.problems.is-error:hover, .problems.is-warning:hover { background: var(--surface-3); }
+
 /* Plain-textarea fallback when the CodeMirror CDN is unreachable. */
 .editor-fallback {
   position: absolute;
@@ -694,6 +720,9 @@ code, pre, kbd, .CodeMirror, .panel-scroll, .pipeline, .select, .editor-fallback
 }
 .error-line:hover { background: rgba(255, 99, 99, 0.14); }
 .error-message { margin: 0; color: var(--text); font: 400 0.8125rem/1.55 var(--font-mono); word-break: break-word; }
+.error-list { display: grid; gap: 6px; margin: 2px 0 0; padding: 0; list-style: none; }
+.error-item { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: baseline; gap: 4px 10px; }
+.error-item .error-line { white-space: nowrap; }
 .error-hint { margin: 8px 0 0; color: var(--muted); font-size: 0.8125rem; }
 
 /* --------------------------------------------------------------- Stepper */
@@ -942,6 +971,23 @@ code, pre, kbd, .CodeMirror, .panel-scroll, .pipeline, .select, .editor-fallback
 .ir-code { padding: 6px 10px 8px; }
 .ir-line { padding: 1px 4px; border-radius: 4px; white-space: pre; overflow-x: auto; }
 .ir-line[data-line]:not([data-line=""]):hover { background: var(--surface-3); }
+.ir-line.is-dead-store { color: var(--warn); }
+.ir-line.is-removed { color: var(--muted); text-decoration: line-through; text-decoration-color: rgba(152, 161, 176, 0.7); }
+.ir-tag {
+  margin-left: 10px;
+  padding: 0 6px;
+  border-radius: 4px;
+  background: var(--warn-soft);
+  color: var(--warn);
+  font: 500 0.625rem/1.6 var(--font-sans);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.ir-live { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px; padding: 6px 10px 0; font-size: 0.6875rem; }
+.ir-live + .ir-code { padding-top: 4px; }
+.ir-code + .ir-live { padding: 0 10px 7px; }
+.ir-live-label { margin-right: 2px; color: var(--muted); font-family: var(--font-sans); letter-spacing: 0.04em; }
+.ir-var { padding: 0 6px; border-radius: 4px; background: rgba(142, 197, 230, 0.12); color: var(--syn-op); line-height: 1.6; }
 
 /* ================================================================ Game UI */
 

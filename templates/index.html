@@ -68,6 +68,7 @@
             <button type="button" class="btn-quiet" id="level-reset">Reset code</button>
             <button type="button" class="btn-quiet" id="level-exit">Exit level</button>
           </div>
+          <button type="button" class="problems" id="problems" hidden aria-live="polite"></button>
           <span class="pane-meta" id="cursor-pos">Ln 1, Col 1</span>
         </div>
       </div>
@@ -157,14 +158,15 @@
         <div class="panel-toolbar" id="ir-toolbar" hidden>
           <div class="segmented" role="group" aria-label="IR version">
             <button type="button" class="seg" data-ir-view="tac" aria-pressed="true">Three-address code</button>
-            <button type="button" class="seg" data-ir-view="optimized" aria-pressed="false">After constant propagation</button>
+            <button type="button" class="seg" data-ir-view="optimized" aria-pressed="false"
+                    title="After constant propagation and dead-store elimination">Optimized</button>
           </div>
           <span class="toolbar-note" id="ir-note"></span>
         </div>
         <div class="panel-scroll" id="ir-body">
           <div class="empty">
             <p class="empty-title">The intermediate representation will appear here</p>
-            <p class="empty-text">The program as three-address code, split into basic blocks and joined into a control-flow graph, with the constants that data-flow analysis proves.</p>
+            <p class="empty-text">The program as three-address code, split into basic blocks and joined into a control-flow graph, with the live variables, dead stores and constants that data-flow analysis finds.</p>
           </div>
         </div>
       </div>
