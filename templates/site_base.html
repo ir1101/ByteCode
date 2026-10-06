@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}MiniLang{% endblock %}</title>
+  <meta name="description" content="{% block description %}MiniLang: a small language and a complete compiler for it, written from scratch in Python, with a playground that shows every stage.{% endblock %}">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%235a1df2'/%3E%3Cpath d='M11 9.5v13l11-6.5z' fill='%23fff'/%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Grenze+Gotisch:wght@500;600&family=JetBrains+Mono:wght@400;500&family=Space+Grotesk:wght@400;500;600&display=swap">
+  <link rel="stylesheet" href="{{ url_for('static', filename='theme.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='site.css') }}">
+</head>
+<body class="{% block body_class %}{% endblock %}">
+<a class="skip-link" href="#main">Skip to content</a>
+<div class="site">
+  <header class="site-top">
+    <nav class="site-pills" aria-label="MiniLang">
+      <a class="pill pill-solid" href="{{ url_for('landing') }}">MiniLang</a>
+      <span class="pill site-tag">Bytecode compiler</span>
+      <span class="pill site-tag">{{ project.course }}</span>
+    </nav>
+    <nav class="site-nav" aria-label="Sections">
+      <a class="pill" href="{{ url_for('playground') }}">Playground</a>
+      <a class="pill" href="{{ url_for('learn') }}"{% if section == 'learn' %} aria-current="page"{% endif %}>Learn</a>
+      <a class="pill" href="{{ url_for('playground') }}#levels">Levels</a>
+    </nav>
+  </header>
+
+  <main id="main" class="site-main">
+    {% block main %}{% endblock %}
+  </main>
+
+  <footer class="site-foot">
+    <nav class="foot-links" aria-label="Open">
+      <a class="link-btn is-primary" href="{{ url_for('playground') }}"><span>Playground</span><span class="arrow" aria-hidden="true">↗</span></a>
+      <a class="link-btn" href="{{ url_for('learn') }}"><span>Learn</span><span class="arrow" aria-hidden="true">↗</span></a>
+      <a class="link-btn" href="{{ project.repository }}" rel="noopener"><span>GitHub</span><span class="arrow" aria-hidden="true">↗</span></a>
+    </nav>
+    <p class="foot-credit">Built by
+      {% for name, _ in project.team %}<strong>{{ name }}</strong>{% if not loop.last %}, {% endif %}{% endfor %}
+      · {{ project.course }}</p>
+  </footer>
+</div>
+{% block scripts %}{% endblock %}
+</body>
+</html>

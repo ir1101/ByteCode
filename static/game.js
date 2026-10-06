@@ -626,4 +626,5 @@
   ML.on("step-back", () => withRankWatch(() => unlock("rewind")));
 
   updateHud();
+  if (location.hash === "#levels") openLevels();   // the landing page's Levels links
 })();

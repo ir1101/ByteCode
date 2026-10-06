@@ -1,0 +1,151 @@
+{% extends "site_base.html" %}
+{% block title %}MiniLang · Bytecode compiler{% endblock %}
+{% block body_class %}is-landing{% endblock %}
+
+{% macro window(id, title, light=false, button="toggle") %}
+<section class="win{% if light %} is-light{% endif %}" data-win="{{ id }}" aria-labelledby="win-{{ id }}">
+  <div class="win-bar">
+    <button type="button" class="win-handle" aria-label="Move the {{ title }} window"></button>
+    <h2 class="win-title" id="win-{{ id }}" data-scramble>[{{ title }}]</h2>
+    {% if button == "toggle" %}
+    <button type="button" class="win-btn" aria-expanded="true" aria-controls="win-{{ id }}-body" aria-label="Collapse {{ title }}"><span class="plus" aria-hidden="true">+</span></button>
+    {% elif button == "pause" %}
+    <button type="button" class="win-btn" id="vm-toggle" aria-pressed="false" aria-label="Pause the machine"><span aria-hidden="true" id="vm-toggle-icon">❚❚</span></button>
+    {% else %}
+    <span class="win-btn" aria-hidden="true"></span>
+    {% endif %}
+  </div>
+  <div class="win-body" id="win-{{ id }}-body">
+    {{ caller() }}
+  </div>
+</section>
+{% endmacro %}
+
+{% block main %}
+<div class="desk" id="desk">
+  <h1 class="display">
+    <span class="visually-hidden">MiniLang: a bytecode compiler, a stack machine and a playground</span>
+    <span class="display-line" aria-hidden="true">Bytecode</span>
+    <span class="display-line" aria-hidden="true">Compiler</span>
+  </h1>
+
+  <!-- left: the pipeline, and the project in numbers -->
+  <div class="desk-col desk-left">
+    {% call window("pipeline", "Pipeline/list") %}
+      <ol class="index-list">
+        {% for c in chapters %}
+        <li><a href="{{ url_for('chapter', slug=c.slug) }}"><span class="n">[{{ loop.index0 }}]</span><span data-scramble-hover>{{ c.stage }}</span><span class="meta">{{ c.produces }}</span></a></li>
+        {% endfor %}
+      </ol>
+    {% endcall %}
+
+    {% call window("learn", "Learn") %}
+      <p class="win-note">{{ stats.chapters }} chapters, one for each stage of the compiler.</p>
+      <div class="win-actions">
+        <span class="chip is-accent">Being written</span>
+        <a class="link-btn" href="{{ url_for('learn') }}"><span>Start</span><span class="arrow" aria-hidden="true">↗</span></a>
+      </div>
+    {% endcall %}
+
+    <section class="loose" aria-labelledby="project-title">
+      <h2 class="readout-title" id="project-title">Project</h2>
+      <dl class="readout">
+        <dt>Python lines</dt><dd>{{ "{:,}".format(stats.python_lines) }}</dd>
+        <dt>Unit tests</dt><dd>{{ stats.tests }}</dd>
+        <dt>Opcodes</dt><dd>{{ stats.opcodes }}</dd>
+        <dt>Levels</dt><dd>{{ stats.challenges }} + {{ stats.bug_hunts }}</dd>
+        <dt>Examples</dt><dd>{{ stats.examples }}</dd>
+        <dt>Dependencies</dt><dd>Flask</dd>
+        <dt>Parser generators</dt><dd>None</dd>
+      </dl>
+    </section>
+  </div>
+
+  <!-- centre: the stack machine running a real program -->
+  <div class="desk-center">
+    <div class="center-readouts">
+      <section class="loose" aria-labelledby="session-title">
+        <h2 class="readout-title" id="session-title">Session</h2>
+        <dl class="readout">
+          <dt>Local time</dt><dd id="s-time">--:--:--</dd>
+          <dt>Compiler</dt><dd id="s-compiler">Checking…</dd>
+          <dt>Ping</dt><dd id="s-ping">--</dd>
+          <dt>Your stars</dt><dd id="s-stars">0 / {{ stats.max_stars }}</dd>
+        </dl>
+      </section>
+      <section class="loose" aria-labelledby="keys-title">
+        <h2 class="readout-title" id="keys-title">Shortcuts</h2>
+        <dl class="readout">
+          <dt><span class="kbd-key">P</span></dt><dd>Playground</dd>
+          <dt><span class="kbd-key">L</span></dt><dd>Learn</dd>
+          <dt><span class="kbd-key">G</span></dt><dd>Levels</dd>
+          <dt><span class="kbd-key">Space</span></dt><dd>Pause the machine</dd>
+          <dt><span class="kbd-key">R</span></dt><dd>Reset windows</dd>
+          <dt><span class="kbd-key">B</span></dt><dd>Reboot</dd>
+        </dl>
+      </section>
+    </div>
+
+    <div class="machine" id="machine" aria-hidden="true">
+      <div class="machine-pc"><span class="label">PC</span><span id="m-addr">0000</span><span class="op" id="m-op">…</span></div>
+      <ol class="machine-stack" id="m-stack"></ol>
+      <div class="machine-base">Operand stack</div>
+    </div>
+
+    {% call window("vm", "VM/live", button="pause") %}
+      <div class="vm-grid">
+        <div class="vm-col">
+          <h3 class="readout-title">Source</h3>
+          <pre class="vm-source" id="vm-source"></pre>
+        </div>
+        <div class="vm-col">
+          <h3 class="readout-title">Bytecode</h3>
+          <ol class="vm-code" id="vm-code"></ol>
+        </div>
+        <div class="vm-col">
+          <h3 class="readout-title">Variables</h3>
+          <dl class="readout" id="vm-vars"></dl>
+          <h3 class="readout-title">Output</h3>
+          <pre class="vm-out" id="vm-out"></pre>
+        </div>
+      </div>
+      <p class="vm-status" id="vm-status" role="status">Compiling on the server…</p>
+    {% endcall %}
+  </div>
+
+  <!-- right: what it is, who made it, where to go next -->
+  <div class="desk-col desk-right">
+    {% call window("about", "About", light=true) %}
+      <p class="about-text" data-scramble>MiniLang is a small programming language and a complete compiler for it, written from scratch in Python with no parser generators.</p>
+      <p class="about-text">Every stage is on show: tokens, syntax tree, symbol table, types, three-address code, bytecode, and a stack machine you can step through one instruction at a time.</p>
+    {% endcall %}
+
+    {% call window("team", "Team") %}
+      <dl class="readout team">
+        {% for name, reg in project.team %}<dt>{{ name }}</dt><dd>{{ reg }}</dd>{% endfor %}
+        <dt class="caps">Guide</dt><dd>{{ project.guide }}</dd>
+      </dl>
+    {% endcall %}
+
+    {% call window("levels", "Levels") %}
+      <p class="win-note">{{ stats.challenges }} challenges and {{ stats.bug_hunts }} bug hunts, checked by hidden tests.</p>
+      <div class="meter" aria-hidden="true"><span id="stars-meter"></span></div>
+      <div class="win-actions">
+        <span class="chip" id="stars-chip">0 / {{ stats.max_stars }} stars</span>
+        <a class="link-btn" href="{{ url_for('playground') }}#levels"><span>Play</span><span class="arrow" aria-hidden="true">↗</span></a>
+      </div>
+    {% endcall %}
+  </div>
+</div>
+
+<div class="boot" id="boot" hidden>
+  <pre class="boot-log" id="boot-log" aria-live="polite"></pre>
+  <button type="button" class="boot-enter" id="boot-enter">Press <span class="boot-key">Enter</span></button>
+</div>
+
+<script type="application/json" id="landing-data">{{ {"demo": demo, "max_stars": stats.max_stars, "course": project.course} | tojson }}</script>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='landing.js') }}"></script>
+{% endblock %}

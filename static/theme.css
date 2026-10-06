@@ -1,0 +1,261 @@
+/* MiniLang theme, shared by the landing page, the learning section and the playground.
+
+   A dark "desktop": charcoal behind a faint grid, windows with bracketed
+   uppercase titles, and one electric-violet accent. Neutrals carry the
+   hierarchy. Violet marks the primary action, focus and "where execution is";
+   green only means success and red only means an error. */
+
+:root {
+  color-scheme: dark;
+
+  --bg: #1c1c1c;
+  --grid-line: rgba(255, 255, 255, 0.04);
+  --grid-size: 40px;
+  --surface: #232323;
+  --surface-2: #2a2a2a;
+  --surface-3: #333333;
+  --border: #303030;
+  --border-strong: #454545;
+  --paper: #ebebeb;            /* light chips and the active title bar */
+  --paper-ink: #151515;
+
+  --text: #ececec;
+  --muted: #9d9d9d;
+
+  --accent: #a68aff;           /* violet for text, lines and focus on dark */
+  --accent-hover: #bfa9ff;
+  --accent-fill: #5a1df2;      /* violet for filled buttons (white text on it) */
+  --accent-fill-hover: #6b34ff;
+  --accent-ink: #ffffff;
+  --accent-soft: rgba(124, 82, 255, 0.16);
+  --accent-line: rgba(150, 118, 255, 0.6);
+
+  --ok: #5cd3a5;
+  --ok-soft: rgba(92, 211, 165, 0.12);
+  --ok-line: rgba(92, 211, 165, 0.5);
+  --danger: #ff8080;
+  --danger-soft: rgba(255, 99, 99, 0.09);
+  --danger-border: rgba(255, 110, 110, 0.38);
+  --warn: #f0a85a;
+  --warn-soft: rgba(240, 168, 90, 0.09);
+  --warn-border: rgba(240, 168, 90, 0.38);
+
+  /* Syntax colours, shared by the editor and the result panels. */
+  --syn-keyword: #b9a2ff;
+  --syn-number: #f4b67f;
+  --syn-op: #8ec5e6;
+  --syn-call: #f0d68a;
+  --syn-comment: #7d7d7d;
+
+  --radius: 6px;
+  --radius-sm: 4px;
+  --font-sans: "Space Grotesk", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --font-display: "Grenze Gotisch", "UnifrakturCook", Georgia, serif;
+  --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background-color: var(--bg);
+  background-image:
+    linear-gradient(var(--grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
+  background-size: var(--grid-size) var(--grid-size);
+  color: var(--text);
+  font: 400 14px/1.5 var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+a { color: inherit; }
+button, input, select, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+[hidden] { display: none !important; }
+
+.visually-hidden {
+  position: absolute !important;
+  width: 1px; height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* Uppercase interface labels: the theme's voice. Prose stays in sentence case. */
+.caps { text-transform: uppercase; letter-spacing: 0.01em; }
+
+/* ------------------------------------------------------------------ pills */
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  padding: 0 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--muted);
+  font: 500 0.8125rem/1 var(--font-sans);
+  letter-spacing: 0.01em;
+  text-transform: uppercase;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.pill-solid { border-color: var(--paper); background: var(--paper); color: var(--paper-ink); }
+a.pill { transition: color 150ms var(--ease), border-color 150ms var(--ease), background-color 150ms var(--ease); }
+a.pill:hover { border-color: #5c5c5c; color: var(--text); }
+a.pill-solid:hover { border-color: #fff; background: #fff; color: var(--paper-ink); }
+.pill[aria-current="page"] { border-color: var(--accent-line); color: var(--text); }
+
+/* Link button: a label and an arrow in its own square, like a window control. */
+.link-btn {
+  display: inline-flex;
+  align-items: stretch;
+  height: 40px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  font: 500 0.8125rem/1 var(--font-sans);
+  text-transform: uppercase;
+  text-decoration: none;
+  overflow: hidden;
+  transition: border-color 150ms var(--ease), background-color 150ms var(--ease);
+}
+.link-btn > span { display: inline-flex; align-items: center; padding: 0 14px; }
+.link-btn .arrow { width: 40px; justify-content: center; padding: 0; border-left: 1px solid var(--border-strong); color: var(--muted); }
+.link-btn:hover { border-color: #5c5c5c; background: var(--surface-2); }
+.link-btn:hover .arrow { color: var(--text); }
+.link-btn.is-primary { border-color: var(--accent-fill); background: var(--accent-fill); color: var(--accent-ink); }
+.link-btn.is-primary .arrow { border-left-color: rgba(255, 255, 255, 0.25); color: var(--accent-ink); }
+.link-btn.is-primary:hover { border-color: var(--accent-fill-hover); background: var(--accent-fill-hover); }
+
+/* --------------------------------------------------------------- windows */
+
+.win {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: rgba(35, 35, 35, 0.94);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+}
+
+.win-bar {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr) 32px;
+  align-items: stretch;
+  flex: none;
+  height: 32px;
+  border-bottom: 1px solid var(--border-strong);
+  background: var(--surface-3);
+  color: var(--text);
+}
+.win.is-light > .win-bar { border-bottom-color: var(--paper); background: var(--paper); color: var(--paper-ink); }
+
+.win-title {
+  margin: 0;
+  overflow: hidden;
+  font: 500 0.8125rem/31px var(--font-sans);
+  letter-spacing: 0.01em;
+  text-align: center;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+/* The six-dot grip on the left of every title bar. */
+.win-handle {
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-right: 1px solid rgba(128, 128, 128, 0.3);
+  background: none;
+  color: inherit;
+  cursor: default;
+}
+.win-handle::before {
+  content: "";
+  width: 8px;
+  height: 12px;
+  background: radial-gradient(circle, currentColor 1.2px, transparent 1.5px) 0 0 / 4px 4px;
+  opacity: 0.55;
+}
+.win-handle.is-draggable { cursor: grab; touch-action: none; }
+.win-handle.is-draggable:active { cursor: grabbing; }
+
+.win-btn {
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-left: 1px solid rgba(128, 128, 128, 0.3);
+  background: none;
+  color: inherit;
+  font: 400 1rem/1 var(--font-sans);
+  transition: background-color 150ms var(--ease);
+}
+.win-btn:hover { background: rgba(128, 128, 128, 0.18); }
+.win-btn:focus-visible, .win-handle:focus-visible { outline-offset: -2px; }
+.win-btn .plus { display: inline-block; transition: transform 180ms var(--ease); }
+.win.is-collapsed .win-btn .plus { transform: rotate(45deg); }
+.win.is-collapsed > .win-body { display: none; }
+span.win-btn { cursor: default; }
+
+.win-body { min-height: 0; padding: 12px 14px; }
+
+/* ----------------------------------------------------- readouts and lists */
+
+/* Small uppercase key / value rows, like a system monitor. */
+.readout { display: grid; grid-template-columns: auto 1fr; gap: 3px 16px; margin: 0; font-size: 0.75rem; line-height: 1.45; }
+.readout-title { margin: 0 0 6px; color: var(--muted); font: 500 0.75rem/1.4 var(--font-sans); letter-spacing: 0.06em; text-transform: uppercase; }
+.readout dt { color: var(--muted); text-transform: uppercase; }
+.readout dd { margin: 0; color: var(--text); font-family: var(--font-mono); font-variant-numeric: tabular-nums; text-align: right; text-transform: uppercase; }
+
+/* [0] LEXER    TOKENS */
+.index-list { margin: 0; padding: 0; list-style: none; }
+.index-list a, .index-list .row {
+  display: grid;
+  grid-template-columns: 3ch minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: baseline;
+  padding: 4px 6px;
+  border-radius: var(--radius-sm);
+  font-size: 0.875rem;
+  text-decoration: none;
+  text-transform: uppercase;
+}
+.index-list a:hover { background: var(--surface-3); }
+.index-list .n { color: var(--muted); font-family: var(--font-mono); font-size: 0.75rem; }
+.index-list .meta { color: var(--muted); font-size: 0.75rem; }
+
+.kbd-key {
+  display: inline-block;
+  min-width: 22px;
+  padding: 1px 5px;
+  border: 1px solid var(--border-strong);
+  border-radius: 3px;
+  font: 500 0.6875rem/1.4 var(--font-mono);
+  text-align: center;
+}
+
+/* Status chips, e.g. OUTLINE / READY on a chapter. */
+.chip { display: inline-flex; align-items: center; height: 22px; padding: 0 8px; border: 1px solid var(--border-strong); border-radius: 3px; color: var(--muted); font: 500 0.6875rem/1 var(--font-sans); letter-spacing: 0.06em; text-transform: uppercase; }
+.chip.is-accent { border-color: var(--accent-line); color: var(--accent); }
+.chip.is-ok { border-color: var(--ok-line); color: var(--ok); }
+
+/* Thin scrollbars that suit the dark surfaces. */
+* { scrollbar-width: thin; scrollbar-color: #454545 transparent; }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #454545; border: 3px solid transparent; border-radius: 10px; background-clip: padding-box; }
+::-webkit-scrollbar-thumb:hover { background-color: #5a5a5a; }
+::-webkit-scrollbar-corner { background: transparent; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
+}

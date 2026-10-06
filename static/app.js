@@ -1368,4 +1368,18 @@
   selectTab("output");
   noticeInput();
   scheduleCheck(0);
+
+  // Deep links from the learning section, e.g. /play?example=dataflow.ml&tab=ir:
+  // open that example, run it, and show that stage.
+  const params = new URLSearchParams(location.search);
+  const linked = examples.find((ex) => ex.name === params.get("example"));
+  if (linked) {
+    if (linked.name !== select.value) {
+      select.value = linked.name;
+      select.dispatchEvent(new Event("change"));
+    }
+    const tab = params.get("tab");
+    if (TABS.includes(tab) && tab !== "level") selectTab(tab);
+    run();
+  }
 })();

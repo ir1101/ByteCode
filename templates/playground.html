@@ -5,11 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>MiniLang Playground</title>
   <meta name="description" content="Write MiniLang, then watch it go through the lexer, parser, compiler and stack VM.">
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23232833'/%3E%3Cpath d='M11 9.5v13l11-6.5z' fill='%234fd1a5'/%3E%3C/svg%3E">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%235a1df2'/%3E%3Cpath d='M11 9.5v13l11-6.5z' fill='%23fff'/%3E%3C/svg%3E">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Space+Grotesk:wght@400;500;600&display=swap">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css">
+  <link rel="stylesheet" href="{{ url_for('static', filename='theme.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
@@ -17,13 +18,15 @@
 
   <header class="topbar">
     <div class="brand">
-      <span class="brand-mark" aria-hidden="true">ML</span>
-      <div class="brand-text">
-        <h1>MiniLang</h1>
-        <p class="pipeline" aria-label="Pipeline: lexer, parser, semantic analysis, type checker, IR, compiler, VM">
-          <span>lexer</span><span aria-hidden="true">→</span><span>parser</span><span aria-hidden="true">→</span><span>semantic</span><span aria-hidden="true">→</span><span>types</span><span aria-hidden="true">→</span><span>IR</span><span aria-hidden="true">→</span><span>compiler</span><span aria-hidden="true">→</span><span>VM</span>
-        </p>
-      </div>
+      <h1 class="visually-hidden">MiniLang Playground</h1>
+      <nav class="brand-pills" aria-label="MiniLang">
+        <a class="pill pill-solid" href="{{ url_for('landing') }}">MiniLang</a>
+        <span class="pill" aria-current="page">Playground</span>
+        <a class="pill" href="{{ url_for('learn') }}">Learn</a>
+      </nav>
+      <p class="pipeline" aria-label="Pipeline: lexer, parser, semantic analysis, type checker, IR, compiler, VM">
+        <span>lexer</span><span aria-hidden="true">→</span><span>parser</span><span aria-hidden="true">→</span><span>semantic</span><span aria-hidden="true">→</span><span>types</span><span aria-hidden="true">→</span><span>IR</span><span aria-hidden="true">→</span><span>compiler</span><span aria-hidden="true">→</span><span>VM</span>
+      </p>
     </div>
     <div class="actions">
       <button type="button" class="btn-secondary" id="levels-btn" aria-haspopup="dialog">
@@ -62,7 +65,8 @@
 
     <section class="pane editor-pane" aria-labelledby="editor-title">
       <div class="pane-head">
-        <h2 class="pane-title" id="editor-title"><span id="file-name">demo.ml</span><span class="dirty-dot" id="dirty-dot" title="Edited" hidden></span></h2>
+        <span class="win-handle" aria-hidden="true"></span>
+        <h2 class="pane-title" id="editor-title"><span class="visually-hidden">Editor: </span><span id="file-name">demo.ml</span><span class="dirty-dot" id="dirty-dot" title="Edited" hidden></span></h2>
         <div class="pane-head-end">
           <div class="level-actions" id="level-actions" hidden>
             <button type="button" class="btn-quiet" id="level-reset">Reset code</button>
@@ -91,6 +95,7 @@
 
     <section class="pane result-pane" aria-label="Compiler stages">
       <div class="tabs-row">
+        <span class="win-handle" aria-hidden="true"></span>
         <div class="tabs" role="tablist" aria-label="Compiler stages">
           <button class="tab" role="tab" id="tab-level" aria-controls="panel-level" aria-selected="false" tabindex="-1" type="button" hidden>
             Level <span class="badge badge-stars" id="badge-level" hidden></span>

@@ -1,15 +1,19 @@
+import os
 import unittest
+from markupsafe import escape   # the same escaping Jinja uses
 
-from tests.helpers import ROOT  # noqa: F401  (sets up sys.path)
-from app import app
+from tests.helpers import ROOT  # sets up sys.path
+from app import app, project_stats
+from learn import CHAPTERS
+from levels import LEVELS
 
 
 class AppTests(unittest.TestCase):
     def setUp(self):
         self.client = app.test_client()
 
-    def test_index_serves_page_with_sample_program(self):
-        resp = self.client.get("/")
+    def test_playground_serves_page_with_sample_program(self):
+        resp = self.client.get("/play")
         self.assertEqual(resp.status_code, 200)
         html = resp.get_data(as_text=True)
         self.assertIn('id="run"', html)
@@ -18,7 +22,8 @@ class AppTests(unittest.TestCase):
         self.assertIn('<option value="functions.ml">', html)
 
     def test_static_files(self):
-        for path in ("/static/app.js", "/static/style.css"):
+        for path in ("/static/app.js", "/static/style.css", "/static/theme.css", "/static/site.css",
+                     "/static/landing.js", "/static/game.js"):
             with self.subTest(path=path):
                 resp = self.client.get(path)
                 self.assertEqual(resp.status_code, 200)
@@ -43,7 +48,7 @@ class AppTests(unittest.TestCase):
         self.assertIn("print 1", r["ir"]["procedures"][0]["blocks"][0]["optimized"])
 
     def test_page_has_symbols_and_ir_tabs(self):
-        html = self.client.get("/").get_data(as_text=True)
+        html = self.client.get("/play").get_data(as_text=True)
         self.assertIn('id="tab-symbols"', html)
         self.assertIn('id="tab-ir"', html)
         self.assertIn('<option value="arrays.ml">', html)
@@ -83,8 +88,13 @@ class AppTests(unittest.TestCase):
         self.assertEqual(self.client.get("/run").status_code, 405)
         self.assertIn("error", self.client.get("/nope").get_json())
 
+    def test_a_browser_gets_a_404_page_not_json(self):
+        resp = self.client.get("/nope", headers={"Accept": "text/html,application/xhtml+xml"})
+        self.assertEqual(resp.status_code, 404)
+        self.assertIn("Page not found", resp.get_data(as_text=True))
+
     def test_page_embeds_levels_without_solutions(self):
-        html = self.client.get("/").get_data(as_text=True)
+        html = self.client.get("/play").get_data(as_text=True)
         self.assertIn('id="levels-data"', html)
         self.assertIn("Count to n", html)
         self.assertIn("game.js", html)
@@ -152,9 +162,76 @@ class AppTests(unittest.TestCase):
         r = self.client.post("/run", json={"source": "x = 1\ny = 2\nprint x + y;"}).get_json()
         self.assertEqual([e["line"] for e in r["errors"]], [1, 2])
 
+    def test_run_with_stdin(self):
+        r = self.client.post("/run", json={"source": "input a;\ninput b;\nprint a * b;", "stdin": "6 7 8"}).get_json()
+        self.assertEqual(r["output"], ["42"])
+        self.assertEqual(r["input"], {"values": ["6", "7", "8"], "used": 2})
+        self.assertEqual(self.client.post("/run", json={"source": "print 1;", "stdin": 5}).status_code, 400)
+
     def test_oversized_body_rejected(self):
         resp = self.client.post("/run", data="x" * 1_100_000, content_type="application/json")
         self.assertEqual(resp.status_code, 413)
+
+
+class PagesTests(unittest.TestCase):
+    def setUp(self):
+        self.client = app.test_client()
+
+    def test_landing_page(self):
+        resp = self.client.get("/")
+        self.assertEqual(resp.status_code, 200)
+        html = resp.get_data(as_text=True)
+        for text in ("Bytecode", "Compiler", "[Pipeline/list]", "Ishu Raj", "24BDS0255", "Muthunagai",
+                     'href="/play"', 'href="/learn"', "landing.js", 'id="landing-data"'):
+            with self.subTest(text=text):
+                self.assertIn(text, html)
+        for chapter in CHAPTERS:   # the pipeline list links every chapter
+            self.assertIn(f'href="/learn/{chapter.slug}"', html)
+
+    def test_landing_demo_program_runs(self):
+        from app import LANDING_DEMO
+        r = self.client.post("/run", json={"source": LANDING_DEMO}).get_json()
+        self.assertTrue(r["ok"])
+        self.assertEqual(r["output"], ["120"])
+        self.assertTrue(r["trace"])
+
+    def test_project_stats_count_the_real_tests(self):
+        stats = project_stats()
+        suite = unittest.defaultTestLoader.discover(os.path.join(ROOT, "tests"), top_level_dir=ROOT)
+        self.assertEqual(stats["tests"], suite.countTestCases())
+        self.assertEqual(stats["challenges"] + stats["bug_hunts"], len(LEVELS))
+        self.assertEqual(stats["max_stars"], 3 * len(LEVELS))
+        self.assertGreater(stats["opcodes"], 25)
+        self.assertGreater(stats["python_lines"], 1000)
+
+    def test_learn_lists_every_chapter(self):
+        html = self.client.get("/learn").get_data(as_text=True)
+        for chapter in CHAPTERS:
+            with self.subTest(chapter=chapter.slug):
+                self.assertIn(str(escape(chapter.title)), html)
+                self.assertIn(f'/learn/{chapter.slug}', html)
+                self.assertIn(chapter.source, html)
+
+    def test_chapter_page_shows_outline_and_links(self):
+        for i, chapter in enumerate(CHAPTERS):
+            with self.subTest(chapter=chapter.slug):
+                resp = self.client.get(f"/learn/{chapter.slug}")
+                self.assertEqual(resp.status_code, 200)
+                html = resp.get_data(as_text=True)
+                for topic in chapter.topics:
+                    self.assertIn(str(escape(topic.title)), html)
+                self.assertIn(f"/play?example={chapter.example}", html)   # opens the right example
+                if i + 1 < len(CHAPTERS):
+                    self.assertIn(f"/learn/{CHAPTERS[i + 1].slug}", html)
+
+    def test_chapter_examples_exist(self):
+        for chapter in CHAPTERS:
+            with self.subTest(chapter=chapter.slug):
+                self.assertTrue(os.path.exists(os.path.join(ROOT, "examples", chapter.example)))
+                self.assertTrue(os.path.exists(os.path.join(ROOT, chapter.source)))
+
+    def test_unknown_chapter(self):
+        self.assertEqual(self.client.get("/learn/nope").status_code, 404)
 
 
 if __name__ == "__main__":

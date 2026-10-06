@@ -1,0 +1,45 @@
+{% extends "site_base.html" %}
+{% block title %}Learn · MiniLang{% endblock %}
+{% block description %}Learn how a compiler works, one stage at a time, with MiniLang's own source code and playground.{% endblock %}
+
+{% block main %}
+<header class="learn-head">
+  <h1 class="display"><span class="display-line">Learn</span></h1>
+  <section class="win is-light" aria-labelledby="learn-intro-title">
+    <div class="win-bar">
+      <span class="win-handle" aria-hidden="true"></span>
+      <h2 class="win-title" id="learn-intro-title">[Learn/readme]</h2>
+      <span class="win-btn" aria-hidden="true"></span>
+    </div>
+    <div class="win-body">
+      <p>How a compiler works, one stage at a time. Each chapter explains one idea, walks through the part of MiniLang that does it, and ends with something to try in the playground.</p>
+      <p>The chapters are being written now. Each card shows what its chapter will cover.</p>
+    </div>
+  </section>
+</header>
+
+<ol class="chapters" aria-label="Chapters">
+  {% for c in chapters %}
+  <li>
+    <section class="win chapter-card" aria-labelledby="chapter-{{ c.slug }}">
+      <div class="win-bar">
+        <span class="win-handle" aria-hidden="true"></span>
+        <p class="win-title" aria-hidden="true">[{{ "%02d" | format(loop.index) }}/{{ c.stage }}]</p>
+        <span class="win-btn" aria-hidden="true"></span>
+      </div>
+      <div class="win-body">
+        <h2 id="chapter-{{ c.slug }}" class="chapter-card-title"><a href="{{ url_for('chapter', slug=c.slug) }}">{{ c.title }}</a></h2>
+        <p>{{ c.summary }}</p>
+        <ul class="topic-list" aria-label="Topics">
+          {% for t in c.topics %}<li>{{ t.title }}</li>{% endfor %}
+        </ul>
+        <div class="card-foot">
+          <code>{{ c.source }}</code>
+          {% if c.status == "ready" %}<span class="chip is-ok">Ready</span>{% else %}<span class="chip is-accent">Outline</span>{% endif %}
+        </div>
+      </div>
+    </section>
+  </li>
+  {% endfor %}
+</ol>
+{% endblock %}

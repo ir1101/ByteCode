@@ -1,6 +1,10 @@
 """MiniLang web frontend: a thin Flask layer over the compiler.
 
-    GET  /       the playground page (templates/index.html + static/)
+    GET  /               the landing page (templates/landing.html)
+    GET  /play           the playground (templates/playground.html + static/app.js, game.js)
+                         ?example=arrays.ml opens that example; #levels opens the level picker
+    GET  /learn          the learning section: one chapter per compiler stage (learn.py)
+    GET  /learn/<slug>   one chapter
     POST /run    body {"source": "...", "stdin"?: "3 4", "level"?: "c1"}  ->  JSON with
                  tokens, AST, bytecode, output and, if a stage failed, the errors with
                  their line numbers. "stdin" holds the numbers `input` statements read.
@@ -16,18 +20,33 @@ Run:  python app.py         this computer only: http://127.0.0.1:5000
 """
 
 import argparse
+import glob
 import os
+import re
 import socket
 
-from flask import Flask, jsonify, render_template, request
+from flask import Flask, abort, jsonify, render_template, request
 from werkzeug.exceptions import HTTPException
 
 from api import lint, run_pipeline
-from levels import LEVELS_BY_ID, check_level, lint_level, public_levels, run_example
+from learn import CHAPTERS, CHAPTERS_BY_SLUG, neighbours
+from levels import LEVELS, LEVELS_BY_ID, check_level, lint_level, public_levels, run_example
+from vm import BINARY_OPS
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 EXAMPLES_DIR = os.path.join(ROOT, "examples")
 DEFAULT_EXAMPLE = "demo.ml"  # variables, arithmetic, if/else, while and print
+REPOSITORY = "https://github.com/ir1101/ByteCode"
+# The program the landing page's stack machine runs (through /run, like any other).
+LANDING_DEMO = "n = 1;\nfor i = 1; i <= 5; i += 1 {\n    n *= i;\n}\nprint n;\n"
+
+PROJECT = {
+    "course": "BCSE307P · Compiler Lab",
+    "guide": "Prof. Muthunagai S U",
+    "team": [("Ishu Raj", "24BDS0255"), ("Parth Bagwe", "24BDS0284"),
+             ("Siddiqa", "24BCE2847"), ("Tejas Sinha", "24BDS0203")],
+    "repository": REPOSITORY,
+}
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 1_000_000  # reject request bodies over 1 MB
@@ -47,11 +66,57 @@ def bad_request(example):
     return jsonify(error=f"expected a JSON object like {example}"), 400
 
 
+def project_stats():
+    """Numbers for the landing page, counted from the code itself so they never go stale."""
+    lines = 0
+    for path in glob.glob(os.path.join(ROOT, "*.py")):
+        with open(path, encoding="utf-8") as f:
+            lines += sum(1 for line in f if line.strip())
+    tests = 0
+    for path in glob.glob(os.path.join(ROOT, "tests", "test_*.py")):
+        with open(path, encoding="utf-8") as f:
+            tests += len(re.findall(r"^\s+def test_", f.read(), re.MULTILINE))
+    with open(os.path.join(ROOT, "vm.py"), encoding="utf-8") as f:
+        opcodes = set(re.findall(r'op == "([A-Z_]+)"', f.read())) | BINARY_OPS
+    return {
+        "python_lines": lines,
+        "tests": tests,
+        "opcodes": len(opcodes),
+        "challenges": sum(1 for lv in LEVELS if lv.track == "challenge"),
+        "bug_hunts": sum(1 for lv in LEVELS if lv.track == "bug"),
+        "max_stars": len(LEVELS) * 3,
+        "examples": len(load_examples()),
+        "chapters": len(CHAPTERS),
+    }
+
+
 @app.get("/")
-def index():
+def landing():
+    return render_template("landing.html", stats=project_stats(), project=PROJECT, chapters=CHAPTERS,
+                           demo=LANDING_DEMO)
+
+
+@app.get("/play")
+def playground():
     examples = load_examples()
-    return render_template("index.html", examples=examples, sample=examples[0]["source"],
+    return render_template("playground.html", examples=examples, sample=examples[0]["source"],
                            levels=public_levels())
+
+
+@app.get("/learn")
+def learn():
+    return render_template("learn.html", chapters=CHAPTERS, project=PROJECT, section="learn")
+
+
+@app.get("/learn/<slug>")
+def chapter(slug):
+    found = CHAPTERS_BY_SLUG.get(slug)
+    if found is None:
+        abort(404, description=f"There is no chapter called {slug!r}.")
+    previous, following = neighbours(found)
+    return render_template("chapter.html", chapter=found, number=CHAPTERS.index(found) + 1,
+                           previous=previous, following=following, chapters=CHAPTERS, project=PROJECT,
+                           section="learn")
 
 
 @app.post("/run")
@@ -105,8 +170,16 @@ def too_large(_):
     return jsonify(error="request body is larger than 1 MB"), 413
 
 
+def wants_page():
+    """A browser asking for a page gets HTML; fetch() and API clients get JSON."""
+    return request.method == "GET" and "text/html" in request.headers.get("Accept", "")
+
+
 @app.errorhandler(HTTPException)
 def http_error(err):
+    if wants_page():
+        return render_template("not_found.html", code=err.code, message=err.description,
+                               project=PROJECT), err.code
     return jsonify(error=err.description), err.code
 
 
@@ -144,7 +217,8 @@ def main(argv=None):
     args = ap.parse_args(argv)
 
     host = "0.0.0.0" if args.lan else "127.0.0.1"
-    print(f"MiniLang playground on this computer: http://127.0.0.1:{args.port}")
+    print(f"MiniLang on this computer: http://127.0.0.1:{args.port}  "
+          f"(playground at /play, learning section at /learn)")
     if args.lan:
         addresses = lan_addresses()
         if addresses:
