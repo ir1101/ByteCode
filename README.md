@@ -64,7 +64,7 @@ The web playground needs Flask once: `python -m pip install flask`.
 
 **The look.** The site is styled as a dark "desktop", inspired by matteocourquin.com: a charcoal background with a faint grid, windows with bracketed uppercase titles such as `[PIPELINE/LIST]`, pill tags, small system-monitor readouts, big blackletter display type (Grenze Gotisch), and one electric-violet accent. Labels use Space Grotesk and code uses JetBrains Mono. Green only ever means success and red an error. The shared tokens and components live in `static/theme.css`, so all three parts match.
 
-**Cursor and hover** (`static/fx.js`). The pointer gets four violet corner brackets that glide after it and snap to frame whatever button or link it is over, sometimes with a label such as *Chapter* or *Drag*. On the landing and learning pages it also leaves a trail: small squares stamped with their x / y position, joined to the pointer by a dashed line. Hovering a window brings up crop marks at its corners; link labels and window titles scramble through random glyphs and settle; buttons fill white as their arrow flies out and back in. The playground keeps just the framing brackets, so nothing gets in the way of editing. All of this is for a mouse or trackpad only, is hidden from screen readers, and turns off with reduced motion.
+**Cursor and hover** (`static/fx.js`). The pointer gets four violet corner brackets that glide after it and snap to frame whatever button or link it is over, sometimes with a label such as *Chapter* or *Drag*. Hovering a window brings up crop marks at its corners; link labels and window titles scramble through random glyphs and settle; buttons fill white as their arrow flies out and back in. The playground keeps just the framing brackets, so nothing gets in the way of editing. All of this is for a mouse or trackpad only, is hidden from screen readers, and turns off with reduced motion.
 
 **The landing page** is built on real data:
 - A **boot screen** runs a power-on self test: it compiles and runs `print 6 * 7;` through `/run`, and each stage reports what it actually produced. It shows once per browser session; any key skips it, and **B** reboots it.
@@ -97,7 +97,7 @@ Hovering a row in any tab highlights its source line. Errors appear in a red box
 | `templates/` | `site_base.html` (header and footer for the landing and learning pages), `landing.html`, `learn.html`, `chapter.html`, `not_found.html`, `playground.html` |
 | `static/theme.css` | the shared theme: colours, fonts, grid background, windows, pills, readouts |
 | `static/site.css`, `static/landing.js` | the landing and learning pages; the boot screen, windows and stack machine |
-| `static/fx.js` | the cursor brackets, the trail and hover scrambling, on every page |
+| `static/fx.js` | the cursor brackets and hover scrambling, on every page |
 | `static/style.css`, `static/app.js` | the playground's layout and rendering; the browser never compiles anything itself |
 | `static/game.js` | levels, stars, XP, achievements and toasts (see [Game mode](#game-mode)) |
 

@@ -2,13 +2,11 @@
 
    - A cursor of four violet corner brackets. They glide after the pointer, and snap
      to frame whatever button, link or window grip it is over, sometimes with a label.
-   - A trail: as the pointer travels, it drops small squares stamped with their x / y
-     position, joined to the pointer by a dashed line (landing and learning pages only;
-     the playground sets <body data-cursor="lite"> and gets just the brackets).
+     The playground sets <body data-cursor="lite">: the brackets only appear when framing.
    - Text that scrambles, one character at a time, when you hover it.
 
    Only for a mouse or trackpad. Touch screens keep their normal behaviour, and with
-   reduced motion there is no trail and nothing scrambles. Everything here is
+   reduced motion nothing scrambles. Everything here is
    decoration: it is hidden from screen readers and never takes a click. */
 (() => {
   "use strict";
@@ -94,8 +92,6 @@
   const TEXTUAL = "input, textarea, .CodeMirror, [contenteditable='true']";
   const PAD = 5;          // how far the brackets sit outside a framed element
   const IDLE = 9;         // half-size of the brackets around a bare pointer
-  const TRAIL_EVERY = 110;   // pixels of travel between trail markers
-  const TRAIL_MAX = 8;
 
   const layer = document.createElement("div");
   layer.className = `cursor is-${mode}`;
@@ -110,15 +106,6 @@
   label.className = "cursor-label";
   layer.append(label);
 
-  const trail = document.createElement("div");
-  trail.className = "cursor-trail";
-  trail.setAttribute("aria-hidden", "true");
-  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-  svg.setAttribute("class", "cursor-line");
-  const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
-  svg.append(line);
-  trail.append(svg);
-  if (mode === "full" && !reduceMotion) document.body.append(trail);
   document.body.append(layer);
   document.documentElement.classList.add(`has-cursor-${mode}`);
 
@@ -126,8 +113,6 @@
   const box = { x: -100, y: -100, w: 0, h: 0 };   // where the brackets are drawn now
   let target = null;          // the element being framed, if any
   let overText = false;
-  let lastMark = null;        // {x, y, el} of the newest trail marker
-  let travelled = 0;
   let running = false;
 
   function labelFor(el) {
@@ -155,15 +140,6 @@
     bl.style.transform = `translate3d(${box.x}px, ${box.y + box.h}px, 0)`;
     br.style.transform = `translate3d(${box.x + box.w}px, ${box.y + box.h}px, 0)`;
     label.style.transform = `translate3d(${mouse.x}px, ${mouse.y + 24}px, 0) translateX(-50%)`;
-    if (lastMark && lastMark.el.isConnected) {
-      line.setAttribute("x1", lastMark.x);
-      line.setAttribute("y1", lastMark.y);
-      line.setAttribute("x2", mouse.x);
-      line.setAttribute("y2", mouse.y);
-      svg.classList.add("is-on");
-    } else {
-      svg.classList.remove("is-on");
-    }
   }
 
   function tick() {
@@ -176,8 +152,8 @@
       if (box[key] !== goal[key]) moving = true;
     }
     draw();
-    // Keep animating while the brackets catch up or a trail line is showing; then rest.
-    if (moving || (lastMark && lastMark.el.isConnected)) requestAnimationFrame(tick);
+    // Keep animating while the brackets catch up; then rest.
+    if (moving) requestAnimationFrame(tick);
     else running = false;
   }
 
@@ -186,23 +162,6 @@
       running = true;
       requestAnimationFrame(tick);
     }
-  }
-
-  function dropMark(x, y) {
-    const mark = document.createElement("div");
-    mark.className = "cursor-mark";
-    mark.style.transform = `translate3d(${x}px, ${y}px, 0)`;
-    const sq = document.createElement("span");
-    sq.className = "cursor-mark-box";
-    const xy = document.createElement("span");
-    xy.className = "cursor-mark-xy";
-    xy.textContent = `${Math.round(x)}\n${Math.round(y)}`;
-    mark.append(sq, xy);
-    trail.append(mark);
-    mark.addEventListener("animationend", () => mark.remove());
-    const marks = trail.querySelectorAll(".cursor-mark");
-    if (marks.length > TRAIL_MAX) marks[0].remove();
-    lastMark = { x, y, el: mark };
   }
 
   function retarget(el) {
@@ -221,13 +180,6 @@
   addEventListener("pointermove", (e) => {
     if (e.pointerType === "touch") return;
     const first = !mouse.inside;
-    if (!first && mode === "full" && !reduceMotion && !target) {
-      travelled += Math.hypot(e.clientX - mouse.x, e.clientY - mouse.y);
-      if (travelled >= TRAIL_EVERY) {
-        travelled = 0;
-        dropMark(e.clientX, e.clientY);
-      }
-    }
     mouse.x = e.clientX;
     mouse.y = e.clientY;
     if (first) {   // appear where the pointer is, without sliding in from a corner

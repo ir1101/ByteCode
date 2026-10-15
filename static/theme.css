@@ -349,21 +349,6 @@ span.win-btn { cursor: default; }
 }
 .cursor.has-label .cursor-label { opacity: 1; }
 
-/* The trail: squares stamped with their position, and a dashed line back to the pointer. */
-.cursor-trail { position: fixed; inset: 0; z-index: 9998; pointer-events: none; }
-.cursor-line { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; opacity: 0; transition: opacity 250ms var(--ease); }
-.cursor-line.is-on { opacity: 1; }
-.cursor-line line { stroke: rgba(205, 205, 205, 0.5); stroke-width: 1; stroke-dasharray: 3 4; }
-.cursor-mark { position: absolute; top: 0; left: 0; animation: mark-life 1500ms var(--ease) forwards; }
-.cursor-mark-box { position: absolute; top: -5px; left: -5px; width: 10px; height: 10px; border: 1px solid var(--accent); }
-.cursor-mark-xy { position: absolute; top: 6px; left: 8px; color: var(--muted); font: 500 10px/1.15 var(--font-mono); font-variant-numeric: tabular-nums; white-space: pre; }
-@keyframes mark-life {
-  0% { opacity: 0; scale: 0; }
-  12% { opacity: 1; scale: 1; }
-  70% { opacity: 1; scale: 1; }
-  100% { opacity: 0; scale: 0.4; }
-}
-
 /* Scrambling text (fx.js): each character keeps its width while glyphs flicker through it. */
 .sc { position: relative; display: inline-block; white-space: pre; }
 .sc-size { visibility: hidden; }

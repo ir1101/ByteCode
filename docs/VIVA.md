@@ -128,7 +128,7 @@ B1  constants in: x=42
 | `static/game.js` | The game layer: level picker, stars, XP, ranks, achievements and toasts. Progress is kept in `localStorage`. |
 | `static/landing.js` | The landing page: a boot screen that runs a real self-test, draggable windows, and a stack machine replaying a real trace. |
 | `static/guide.js` | Makes the learning section's examples editable, with syntax colours. Re-runs them through `/run`, or `/stage` for a chapter demo. |
-| `static/fx.js` | The bracket cursor, the coordinate trail and scrambling text. Only with a mouse; off with reduced motion. |
+| `static/fx.js` | The bracket cursor and scrambling text. Only with a mouse; off with reduced motion. |
 | `static/theme.css`, `site.css`, `style.css` | The shared dark "desktop" theme, the landing and learning pages, and the playground. |
 | `tests/` | 338 tests: every stage, recovery, analyses, same behaviour with the optimizer on and off, levels, the website, every lesson example and every chapter demo. |
 
