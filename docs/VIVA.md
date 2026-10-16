@@ -8,8 +8,8 @@ MiniLang is a small programming language and a complete compiler for it, written
 
 | | |
 |---|---|
-| Python (compiler and website) | 3,968 lines |
-| Unit tests | 338, run by GitHub Actions on every push |
+| Python (compiler and website) | 3,959 lines (not counting blank lines) |
+| Unit tests | 339, run by GitHub Actions on every push |
 | Bytecode instructions | 30 opcodes |
 | Game | 13 challenges + 8 bug hunts, 63 stars |
 | Learning section | 12 language lessons, 8 compiler chapters |
@@ -130,7 +130,7 @@ B1  constants in: x=42
 | `static/guide.js` | Makes the learning section's examples editable, with syntax colours. Re-runs them through `/run`, or `/stage` for a chapter demo. |
 | `static/fx.js` | The bracket cursor and scrambling text. Only with a mouse; off with reduced motion. |
 | `static/theme.css`, `site.css`, `style.css` | The shared dark "desktop" theme, the landing and learning pages, and the playground. |
-| `tests/` | 338 tests: every stage, recovery, analyses, same behaviour with the optimizer on and off, levels, the website, every lesson example and every chapter demo. |
+| `tests/` | 339 tests: every stage, recovery, analyses, same behaviour with the optimizer on and off, levels, the website, every lesson example and every chapter demo. |
 
 ## Questions examiners ask
 

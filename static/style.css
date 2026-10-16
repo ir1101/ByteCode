@@ -1404,9 +1404,11 @@ code, pre, kbd, .CodeMirror, .panel-scroll, .pipeline, .select, .editor-fallback
 .dialog { border-radius: var(--radius); }
 .dialog-title { letter-spacing: 0.01em; text-transform: uppercase; }
 
-@media (max-width: 1360px) {
+/* The pipeline label only fits beside the buttons on a wide screen (not on a 1366px laptop). */
+@media (max-width: 1480px) {
   .pipeline { display: none; }
 }
+.topbar .actions > * { white-space: nowrap; }
 
 
 @media (max-width: 860px) {

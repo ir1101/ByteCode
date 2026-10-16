@@ -1,4 +1,5 @@
 import os
+import re
 import unittest
 from markupsafe import escape   # the same escaping Jinja uses
 
@@ -28,6 +29,22 @@ class AppTests(unittest.TestCase):
                 resp = self.client.get(path)
                 self.assertEqual(resp.status_code, 200)
                 resp.close()
+
+    def test_pages_work_offline(self):
+        # Fonts and the editor are served from static/vendor, so a demo needs no internet.
+        pages = ["/", "/play", "/learn", f"/learn/{CHAPTERS[0].slug}", "/learn/language/first-program"]
+        assets = re.compile(r'<(?:link[^>]*\shref|script[^>]*\ssrc)="([^"]+)"')
+        for page in pages:
+            with self.subTest(page=page):
+                found = assets.findall(self.client.get(page).get_data(as_text=True))
+                self.assertTrue(found)
+                for url in found:
+                    if url.startswith("data:"):
+                        continue
+                    self.assertTrue(url.startswith("/static/"), url)
+                    resp = self.client.get(url.split("?")[0])
+                    self.assertEqual(resp.status_code, 200, url)
+                    resp.close()
 
     def test_run_returns_all_four_stages(self):
         resp = self.client.post("/run", json={"source": "x = 6;\nprint x * 7;"})
@@ -212,7 +229,7 @@ class PagesTests(unittest.TestCase):
                 self.assertIn(f'/learn/{chapter.slug}', html)
                 self.assertIn(chapter.source, html)
 
-    def test_chapter_page_shows_outline_and_links(self):
+    def test_chapter_page_shows_topics_and_links(self):
         for i, chapter in enumerate(CHAPTERS):
             with self.subTest(chapter=chapter.slug):
                 resp = self.client.get(f"/learn/{chapter.slug}")

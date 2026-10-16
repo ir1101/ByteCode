@@ -71,7 +71,7 @@
           </ul>
           <div class="card-foot">
             <code>{{ c.source }}</code>
-            {% if c.status == "ready" %}<span class="chip is-ok">Ready</span>{% else %}<span class="chip is-accent">Outline</span>{% endif %}
+            <span class="chip">{{ c.topics | length }} sections</span>
           </div>
         </div>
       </section>

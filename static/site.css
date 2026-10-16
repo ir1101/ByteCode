@@ -242,12 +242,6 @@
 .chapter-page .crumbs a:hover { color: var(--text); }
 .chapter-page h1 { margin: 0 0 10px; font-size: clamp(1.75rem, 3vw, 2.25rem); font-weight: 600; line-height: 1.15; }
 .chapter-page .lede { margin: 0 0 16px; color: var(--muted); font-size: 1rem; line-height: 1.6; max-width: 65ch; }
-.notice { display: flex; gap: 12px; align-items: flex-start; margin: 0 0 18px; padding: 12px 14px; border: 1px dashed var(--accent-line); border-radius: var(--radius-sm); background: var(--accent-soft); font-size: 0.875rem; line-height: 1.55; }
-.outline { margin: 0; padding: 0; list-style: none; counter-reset: topic; }
-.outline li { display: grid; grid-template-columns: 3ch 1fr; gap: 12px; padding: 14px 0; border-top: 1px solid var(--border); counter-increment: topic; }
-.outline li::before { content: counter(topic, decimal-leading-zero); color: var(--accent); font: 500 0.875rem/1.5 var(--font-mono); }
-.outline h2 { margin: 0 0 2px; font-size: 1.0625rem; font-weight: 600; }
-.outline p { margin: 0; color: var(--muted); line-height: 1.55; max-width: 62ch; }
 .side-stack { display: flex; flex-direction: column; gap: 16px; position: sticky; top: 16px; }
 .pager { display: flex; justify-content: space-between; gap: 12px; margin-top: 20px; }
 .pager a { display: flex; flex-direction: column; gap: 2px; max-width: 48%; padding: 10px 12px; border: 1px solid var(--border-strong); border-radius: var(--radius-sm); text-decoration: none; }

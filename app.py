@@ -141,9 +141,7 @@ def chapter(slug):
     if found is None:
         abort(404, description=f"There is no chapter called {slug!r}.")
     previous, following = neighbours(found)
-    # A written chapter has its own template; otherwise its outline is shown.
-    template = f"chapters/{found.slug}.html" if found.written else "chapter.html"
-    return render_template(template, chapter=found, number=CHAPTERS.index(found) + 1,
+    return render_template(f"chapters/{found.slug}.html", chapter=found, number=CHAPTERS.index(found) + 1,
                            previous=previous, following=following, chapters=CHAPTERS, project=PROJECT,
                            section="learn")
 

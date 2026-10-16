@@ -22,7 +22,6 @@ from functools import lru_cache
 from markupsafe import Markup
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
-TEMPLATES = os.path.join(ROOT, "templates", "chapters")
 
 
 @dataclass(frozen=True)
@@ -42,14 +41,6 @@ class Chapter:
     example: str        # examples/<example> opens in the playground
     tab: str            # the playground tab that shows this stage
     produces: str       # what the stage hands to the next one
-
-    @property
-    def written(self):
-        return os.path.exists(os.path.join(TEMPLATES, f"{self.slug}.html"))
-
-    @property
-    def status(self):
-        return "ready" if self.written else "outline"
 
 
 CHAPTERS = (

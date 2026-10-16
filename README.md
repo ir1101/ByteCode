@@ -45,7 +45,7 @@ python app.py --lan                                # same, plus every device on 
 python -m unittest discover -s tests -t . -v       # run the test suite
 ```
 
-The web playground needs Flask once: `python -m pip install flask`.
+The web playground needs Flask once: `python -m pip install flask`. After that the whole site works **without internet**: the editor (CodeMirror 5) and the fonts are served from `static/vendor/`, and a test checks that no page loads anything from another site.
 
 **Sharing on a local network.** `python app.py --lan` listens on every network interface and prints addresses like `http://172.20.10.2:5000`. Anyone on the same Wi-Fi or hotspot can open that address, as long as the server keeps running on your machine.
 - **Windows firewall:** it may ask the first time; allow Python.
@@ -470,8 +470,9 @@ The chapter pages also show where the stage sits in the pipeline and a contents 
 | `learn.py` | the compiler chapters, source quoting and stage demos |
 | `levels.py` | game levels, the test harness and star scoring |
 | `templates/`, `static/` | the pages, the shared theme and the scripts (see [Website](#website-apppy)) |
-| `tests/` | 338 unit tests: every stage, error recovery and hints, semantic analysis, type checking, input, the IR and its analyses, the optimizer (including same-behaviour checks), tail calls, arrays, the API, the levels, the website, every example in the language lessons, and every quote and demo in the compiler chapters |
+| `static/vendor/` | local copies of CodeMirror 5.65.16 (MIT) and the three fonts (SIL Open Font License), with their licence files |
+| `tests/` | 339 unit tests: every stage, error recovery and hints, semantic analysis, type checking, input, the IR and its analyses, the optimizer (including same-behaviour checks), tail calls, arrays, the API, the levels, the website, every example in the language lessons, and every quote and demo in the compiler chapters |
 | `examples/` | `demo.ml`, `optimize.ml`, `functions.ml` (recursion, for, break/continue), `arrays.ml` (lists, `%`, a sieve), `dataflow.ml` (liveness, dead stores, `+=`, tail calls) |
-| `docs/` | `VIVA.md` (notes for presenting the project) and the screenshots above |
+| `docs/` | the project report (Word and PDF, on the course template), `VIVA.md` (notes for presenting the project) and the screenshots above |
 | `.github/workflows/tests.yml` | GitHub Actions: runs the test suite on every push |
 | `requirements.txt` | Flask, the only dependency (for the web playground) |
