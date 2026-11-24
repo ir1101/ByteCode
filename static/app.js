@@ -194,7 +194,7 @@
     result: null,     // last JSON from /run
     step: 0,          // index into result.trace
     tab: "output",
-    astView: "tree",
+    astView: "graph",   // AST tab: "graph" (diagram), "tree" (collapsible list) or "text"
     bcView: "optimized",
     irView: "tac",      // IR tab: "tac" or "optimized" (after constant propagation)
     stale: false,     // editor changed since the last run
@@ -233,6 +233,7 @@
       $(`#panel-${t}`).hidden = !on;
     }
     if (focus) $(`#tab-${name}`).focus();
+    if (name !== "ast") leaveAstFullscreen();
     applyStepHighlight();
     if (name === "bytecode") scrollCurrentInstructionIntoView();
     if (name === "ir") drawIrEdges();
@@ -354,6 +355,12 @@
     // Swap the children, not the containers, so their event listeners survive.
     for (const [id, node] of Object.entries(pristine)) $(`#${id}`).replaceChildren(...node.cloneNode(true).childNodes);
     $("#ast-toolbar").hidden = true;
+    $("#ast-body").classList.remove("is-graph");
+    $("#ast-graph-hint").hidden = true;
+    $("#ast-minimap").hidden = true;
+    graph.result = null;
+    graph.svg = null;
+    graph.mini = null;
     $("#bytecode-toolbar").hidden = true;
     $("#ir-toolbar").hidden = true;
     $("#output-empty").hidden = false;
@@ -526,14 +533,24 @@
   function renderAst() {
     const body = $("#ast-body");
     const r = state.result;
+    if (body.classList.contains("is-graph")) graph.scroll = { left: body.scrollLeft, top: body.scrollTop };
+    body.classList.remove("is-graph");
     body.replaceChildren();
+    graph.svg = null;
+    graph.mini = null;
+    const isGraph = state.astView === "graph" && !!r.ast;
     $("#ast-toolbar").hidden = !r.ast;
+    $("#ast-graph-hint").hidden = !isGraph;
+    $("#ast-minimap").hidden = true;
     if (!r.ast) return body.append(blocked("syntax tree"));
 
     for (const seg of $$("[data-ast-view]")) seg.setAttribute("aria-pressed", String(seg.dataset.astView === state.astView));
-    $("#ast-tree-actions").hidden = state.astView !== "tree";
+    $("#ast-tree-actions").hidden = state.astView === "text";
+    $("#ast-graph-actions").hidden = !isGraph;
 
-    if (state.astView === "text") {
+    if (isGraph) {
+      renderAstGraph(body, r);
+    } else if (state.astView === "text") {
       body.append(el("pre", { class: "ast-text" }, r.ast_dump));
     } else {
       body.append(el("ul", { class: "ast-tree", "aria-label": "Abstract syntax tree" }, astItem(r.ast)));
@@ -542,19 +559,570 @@
 
   for (const seg of $$("[data-ast-view]")) {
     seg.addEventListener("click", () => {
+      if (seg.dataset.astView !== "graph") leaveAstFullscreen();
       state.astView = seg.dataset.astView;
       renderAst();
     });
   }
   $("#ast-expand").addEventListener("click", () => {
+    if (state.astView === "graph") return foldGraph(() => false);
     $$("#ast-body .ast-item").forEach((item) => setCollapsed(item, false));
   });
   $("#ast-collapse").addEventListener("click", () => {
     // Keep the Program root open so every top-level statement stays visible.
+    if (state.astView === "graph") return foldGraph((g) => g.path !== "");
     $$("#ast-body .ast-item").forEach((item, i) => {
       if (i > 0 && $(":scope > .ast-row > .ast-toggle", item)) setCollapsed(item, true);
     });
   });
+
+  // ------------------------------------------------------------- AST: graph
+
+  /* The Graph view draws the syntax tree as a diagram: a box per node and a line to each child,
+     labelled with the field the child fills (left, right, condition, then_body…). Statement lists
+     (Program and Block) hang their statements left to right in source order, each in its own
+     column; everywhere else a child subtree may tuck in beside its neighbour, which keeps
+     expressions compact. The diagram can be zoomed, dragged around, folded node by node and
+     shown full screen. */
+
+  const AST_KIND = {
+    BinOp: "op", LogicalOp: "op", UnaryOp: "op",
+    Call: "call", Index: "call", ArrayLit: "call",
+    Number: "num", Var: "var",
+  };
+  const SEQUENCE_NODES = new Set(["Program", "Block"]);
+  const AG = {
+    nodeH: 40, rowGap: 46, padX: 11, minW: 48, gap: 14, seqGap: 28, margin: 28,
+    minZoom: 0.15, maxZoom: 2, maxFit: 1.25, readable: 0.55, bigTreeZoom: 0.85, detailMax: 18,
+  };
+
+  const graph = {
+    result: null,          // the run the measured tree belongs to
+    tree: null,
+    collapsed: new Set(),  // paths of folded nodes
+    zoom: 1,
+    mode: "auto",          // "auto": pick the zoom for the panel; "fit": fit the whole tree; "manual"
+    pending: true,         // still needs its first zoom (the panel was hidden when it was drawn)
+    scroll: null,          // scroll position kept while the Tree or Text view is shown
+    W: 0, H: 0,
+    svg: null,
+    visible: [],
+    mini: null,
+  };
+  const astBody = $("#ast-body");
+
+  /** What a node's box shows under its type: the operator, name or value it holds. */
+  function graphDetail(node) {
+    if (node.type === "FuncDef") return `${node.name}(${(node.params || []).join(", ")})`;
+    const bits = [];
+    for (const [k, v] of Object.entries(node)) {
+      if (k === "type" || k === "line" || v === null || v === undefined || isNode(v) || isNodeList(v)) continue;
+      if (Array.isArray(v)) { if (v.length) bits.push(v.join(", ")); continue; }
+      bits.push(String(v));
+    }
+    return bits.join(" ");
+  }
+
+  function buildGraphTree(node, path, edge) {
+    const kids = [];
+    for (const [k, v] of Object.entries(node)) {
+      if (k === "type" || k === "line") continue;
+      if (isNode(v)) kids.push(buildGraphTree(v, `${path}/${k}`, k));
+      else if (isNodeList(v)) v.forEach((child, i) => kids.push(buildGraphTree(child, `${path}/${k}.${i}`, null)));
+    }
+    return {
+      node, path, edge, kids, type: node.type, line: node.line,
+      detail: graphDetail(node), kind: AST_KIND[node.type] || "stmt",
+      size: 1 + kids.reduce((n, k) => n + k.size, 0),
+    };
+  }
+
+  let measureCtx = null;
+  function textWidth(text, font) {
+    measureCtx = measureCtx || document.createElement("canvas").getContext("2d");
+    measureCtx.font = font;
+    return measureCtx.measureText(text).width;
+  }
+
+  /** Box widths, from the same fonts the CSS gives the SVG text. */
+  function measureGraphTree(g, mono) {
+    g.shown = g.detail.length > AG.detailMax ? `${g.detail.slice(0, AG.detailMax - 1)}…` : g.detail;
+    const typeW = textWidth(g.type, g.shown ? `500 11px ${mono}` : `600 12px ${mono}`);
+    const detailW = g.shown ? textWidth(g.shown, `600 13px ${mono}`) : 0;
+    g.w = Math.max(AG.minW, Math.ceil(Math.max(typeW, detailW)) + 2 * AG.padX);
+    g.labelW = g.edge ? Math.ceil(textWidth(g.edge, `400 10px ${mono}`)) + 10 : 0;
+    g.kids.forEach((k) => measureGraphTree(k, mono));
+  }
+
+  /**
+   * Lay out a subtree with its root at x = 0, returning its contour: the [left, right] extent of
+   * each level below the root. Siblings are pushed apart until their contours clear at every level.
+   */
+  function layoutGraphTree(g) {
+    g.open = g.kids.length > 0 && !graph.collapsed.has(g.path);
+    const half = Math.max(g.w, g.labelW) / 2;   // the edge label above a node needs room too
+    if (!g.open) {
+      g.kidX = [];
+      return [[-half, half]];
+    }
+    const seq = SEQUENCE_NODES.has(g.type);
+    const contours = g.kids.map(layoutGraphTree);
+    const offsets = [0];
+    const acc = contours[0].map(([l, r]) => [l, r]);
+    for (let i = 1; i < contours.length; i++) {
+      const c = contours[i];
+      let shift = -Infinity;
+      if (seq) {   // statements keep a column each, in source order
+        shift = Math.max(...acc.map(([, r]) => r)) - Math.min(...c.map(([l]) => l)) + AG.seqGap;
+      } else {
+        for (let d = 0; d < Math.min(acc.length, c.length); d++) shift = Math.max(shift, acc[d][1] - c[d][0] + AG.gap);
+      }
+      offsets.push(shift);
+      c.forEach(([l, r], d) => {
+        if (d < acc.length) {
+          acc[d][0] = Math.min(acc[d][0], l + shift);
+          acc[d][1] = Math.max(acc[d][1], r + shift);
+        } else {
+          acc.push([l + shift, r + shift]);
+        }
+      });
+    }
+    // A statement list sits above its first statement; any other node is centred over its children.
+    const anchor = seq ? 0 : (offsets[0] + offsets[offsets.length - 1]) / 2;
+    g.kidX = offsets.map((o) => o - anchor);
+    return [[-half, half], ...acc.map(([l, r]) => [l - anchor, r - anchor])];
+  }
+
+  function placeGraphTree(g, x, depth, out) {
+    g.x = x;
+    g.y = depth * (AG.nodeH + AG.rowGap);
+    out.push(g);
+    if (g.open) g.kids.forEach((k, i) => placeGraphTree(k, x + g.kidX[i], depth + 1, out));
+  }
+
+  function layoutGraph() {
+    layoutGraphTree(graph.tree);
+    const visible = [];
+    placeGraphTree(graph.tree, 0, 0, visible);
+    let left = Infinity, right = -Infinity, bottom = 0;
+    for (const g of visible) {
+      const half = Math.max(g.w, g.labelW) / 2;
+      left = Math.min(left, g.x - half);
+      right = Math.max(right, g.x + half);
+      bottom = Math.max(bottom, g.y + AG.nodeH);
+    }
+    for (const g of visible) {
+      g.x = Math.round(g.x - left + AG.margin);
+      g.y += AG.margin;
+    }
+    graph.visible = visible;
+    graph.W = Math.ceil(right - left + 2 * AG.margin);
+    graph.H = Math.ceil(bottom + 10 + 2 * AG.margin);   // + room for a fold button under the lowest row
+  }
+
+  function svgText(attrs, text) {
+    const t = svg("text", attrs);
+    t.textContent = text;
+    return t;
+  }
+
+  function drawGraphEdges(g, edges, labels) {
+    const bottom = g.y + AG.nodeH;
+    const bus = bottom + 20;
+    edges.append(svg("path", { class: "ag-edge", d: `M${g.x},${bottom + 7}V${bus}` }));
+    for (const k of g.kids) {
+      const dx = k.x - g.x;
+      const r = Math.min(6, Math.abs(dx));
+      edges.append(svg("path", {
+        class: "ag-edge",
+        d: dx === 0 ? `M${k.x},${bus}V${k.y}` : `M${g.x},${bus}H${k.x - Math.sign(dx) * r}Q${k.x},${bus} ${k.x},${bus + r}V${k.y}`,
+      }));
+      if (k.edge) {
+        const label = svg("g", { class: "ag-label", transform: `translate(${k.x},${bus + (k.y - bus) / 2})` });
+        label.append(svg("rect", { x: -k.labelW / 2, y: -7, width: k.labelW, height: 14, rx: 3 }), svgText({ y: 3.5, "text-anchor": "middle" }, k.edge));
+        labels.append(label);
+      }
+    }
+  }
+
+  function drawGraphNode(g) {
+    const folded = g.kids.length > 0 && !g.open;
+    const group = svg("g", {
+      class: `ag-node k-${g.kind}${g.path === "" ? " is-root" : ""}${folded ? " is-folded" : ""}`,
+      transform: `translate(${g.x - g.w / 2},${g.y})`,
+      "data-line": g.line ?? "",
+      "data-path": g.path,
+    });
+    const title = svg("title");
+    title.textContent = `${g.type}${g.detail ? ` ${g.detail}` : ""}${g.line != null ? ` · line ${g.line}` : ""}`;
+    group.append(title);
+    if (folded) group.append(svg("rect", { class: "ag-stack", x: 4, y: 4, width: g.w, height: AG.nodeH, rx: 5 }));
+    group.append(svg("rect", { class: "ag-box", width: g.w, height: AG.nodeH, rx: 5 }));
+    const mid = g.w / 2;
+    if (g.shown) {
+      group.append(svgText({ class: "ag-type", x: mid, y: 15, "text-anchor": "middle" }, g.type),
+                   svgText({ class: "ag-detail", x: mid, y: 31.5, "text-anchor": "middle" }, g.shown));
+    } else {
+      group.append(svgText({ class: "ag-type is-solo", x: mid, y: 24.5, "text-anchor": "middle" }, g.type));
+    }
+    if (g.kids.length) group.append(drawGraphToggle(g));
+    return group;
+  }
+
+  /** The fold button under a node: a minus while open, "+N" (hidden nodes) while folded. */
+  function drawGraphToggle(g) {
+    const hidden = g.size - 1;
+    const t = svg("g", {
+      class: "ag-toggle", role: "button", tabindex: "0", "data-path": g.path,
+      "aria-expanded": String(g.open),
+      "aria-label": g.open ? `Fold ${g.type}` : `Unfold ${g.type}, ${plural(hidden, "node")} hidden`,
+      transform: `translate(${g.w / 2},${AG.nodeH})`,
+    });
+    const tip = svg("title");
+    tip.textContent = g.open ? "Fold this subtree" : `Unfold ${plural(hidden, "hidden node")}`;
+    t.append(tip, svg("circle", { class: "ag-hit", r: 12 }));
+    if (g.open) {
+      t.append(svg("circle", { class: "ag-knob", r: 7 }), svg("path", { class: "ag-glyph", d: "M-3,0H3" }));
+    } else {
+      const text = `+${fmt(hidden)}`;
+      const w = Math.round(textWidth(text, `500 10px ${monoFont()}`)) + 12;
+      t.append(svg("rect", { class: "ag-knob", x: -w / 2, y: -7, width: w, height: 14, rx: 7 }),
+               svgText({ class: "ag-count", y: 3.5, "text-anchor": "middle" }, text));
+    }
+    return t;
+  }
+
+  const monoFont = () => getComputedStyle(document.documentElement).getPropertyValue("--font-mono").trim() || "monospace";
+
+  function drawGraph() {
+    layoutGraph();
+    const root = svg("svg", {
+      class: "ag-svg", viewBox: `0 0 ${graph.W} ${graph.H}`, role: "group",
+      "aria-label": `Syntax tree diagram, ${plural(graph.tree.size, "node")}. The Tree view lists the same nodes as text.`,
+    });
+    const edges = svg("g", { class: "ag-edges", "aria-hidden": "true" });
+    const labels = svg("g", { class: "ag-labels", "aria-hidden": "true" });
+    const nodes = svg("g", { class: "ag-nodes" });
+    for (const g of graph.visible) {
+      if (g.open) drawGraphEdges(g, edges, labels);
+      nodes.append(drawGraphNode(g));
+    }
+    root.append(edges, labels, nodes);
+    root.addEventListener("click", (e) => {
+      const toggle = e.target.closest(".ag-toggle");
+      if (toggle) toggleGraphNode(toggle.dataset.path, false);
+    });
+    root.addEventListener("keydown", (e) => {
+      const toggle = e.target.closest(".ag-toggle");
+      if (toggle && (e.key === "Enter" || e.key === " ")) {
+        e.preventDefault();
+        toggleGraphNode(toggle.dataset.path, true);
+      }
+    });
+    astBody.replaceChildren(root);
+    graph.svg = root;
+    applyGraphZoom();
+  }
+
+  function renderAstGraph(body, r) {
+    if (graph.result !== r) {
+      graph.result = r;
+      graph.tree = buildGraphTree(r.ast, "", null);
+      measureGraphTree(graph.tree, monoFont());
+      graph.collapsed = new Set();
+      graph.mode = "auto";
+      graph.pending = true;
+      graph.scroll = null;
+      // Box sizes depend on the code font; measure again if it was still loading.
+      if (document.fonts && document.fonts.status !== "loaded") {
+        document.fonts.ready.then(() => {
+          if (graph.result !== r) return;
+          measureGraphTree(graph.tree, monoFont());
+          if (graph.svg) drawGraph();
+        });
+      }
+    }
+    body.classList.add("is-graph");
+    drawGraph();
+    if (graph.pending || !graph.scroll) {
+      autoGraphView();
+    } else {
+      body.scrollLeft = graph.scroll.left;
+      body.scrollTop = graph.scroll.top;
+      drawMinimap();
+    }
+  }
+
+  function applyGraphZoom() {
+    if (!graph.svg) return;
+    graph.svg.setAttribute("width", Math.round(graph.W * graph.zoom));
+    graph.svg.setAttribute("height", Math.round(graph.H * graph.zoom));
+    const percent = `${Math.round(graph.zoom * 100)}%`;
+    $("#ast-zoom-fit").textContent = percent;
+    $("#ast-zoom-fit").setAttribute("aria-label", `Zoom ${percent}. Fit the whole tree`);
+  }
+
+  /** Zoom keeping the point under `anchor` (panel coordinates; default: the centre) where it is. */
+  function setGraphZoom(zoom, anchor) {
+    if (!graph.svg || !astBody.clientWidth) return;
+    zoom = clamp(zoom, AG.minZoom, AG.maxZoom);
+    const box = astBody.getBoundingClientRect();
+    const ax = box.left + (anchor ? anchor.x : astBody.clientWidth / 2);
+    const ay = box.top + (anchor ? anchor.y : astBody.clientHeight / 2);
+    const before = graph.svg.getBoundingClientRect();
+    const cx = (ax - before.left) / graph.zoom;
+    const cy = (ay - before.top) / graph.zoom;
+    graph.zoom = zoom;
+    graph.mode = "manual";
+    applyGraphZoom();
+    const after = graph.svg.getBoundingClientRect();
+    astBody.scrollLeft += after.left + cx * zoom - ax;
+    astBody.scrollTop += after.top + cy * zoom - ay;
+    drawMinimap();
+  }
+
+  const fitZoom = () => Math.min((astBody.clientWidth - 8) / graph.W, (astBody.clientHeight - 8) / graph.H);
+
+  function fitGraph() {
+    if (!graph.svg || !astBody.clientWidth) return;
+    graph.zoom = clamp(fitZoom(), AG.minZoom, AG.maxFit);
+    graph.mode = "fit";
+    applyGraphZoom();
+    astBody.scrollLeft = 0;
+    astBody.scrollTop = 0;
+    drawMinimap();
+  }
+
+  /** The starting view: the whole tree if it is still readable, else the top-left corner at a readable size. */
+  function autoGraphView() {
+    if (!graph.svg || !astBody.clientWidth) {
+      graph.pending = true;
+      return;
+    }
+    graph.pending = false;
+    const fit = fitZoom();
+    graph.zoom = fit >= AG.readable ? Math.min(fit, AG.maxFit) : AG.bigTreeZoom;
+    graph.mode = "auto";
+    applyGraphZoom();
+    astBody.scrollLeft = 0;
+    astBody.scrollTop = 0;
+    drawMinimap();
+  }
+
+  /** Fold or unfold one node, keeping it still on screen. */
+  function toggleGraphNode(path, refocus) {
+    const find = () => graph.svg && graph.svg.querySelector(`.ag-node[data-path="${CSS.escape(path)}"]`);
+    const before = find()?.getBoundingClientRect();
+    if (graph.collapsed.has(path)) graph.collapsed.delete(path);
+    else graph.collapsed.add(path);
+    if (graph.mode === "auto") graph.mode = "manual";
+    drawGraph();
+    const node = find();
+    const after = node?.getBoundingClientRect();
+    if (before && after) {
+      astBody.scrollLeft += after.left - before.left;
+      astBody.scrollTop += after.top - before.top;
+    }
+    drawMinimap();
+    if (refocus) node?.querySelector(".ag-toggle")?.focus();
+  }
+
+  /** Expand all / Collapse all in the Graph view. */
+  function foldGraph(shouldFold) {
+    if (!graph.tree) return;
+    graph.collapsed = new Set();
+    (function walk(g) {
+      if (g.kids.length && shouldFold(g)) graph.collapsed.add(g.path);
+      g.kids.forEach(walk);
+    })(graph.tree);
+    drawGraph();
+    autoGraphView();
+  }
+
+  // Minimap: the whole tree in miniature with the visible part outlined, shown once the tree
+  // no longer fits. Click or drag in it to move there.
+  function drawMinimap() {
+    const mini = $("#ast-minimap");
+    const show = state.tab === "ast" && state.astView === "graph" && !!graph.svg && astBody.clientWidth > 0
+      && (graph.W * graph.zoom > astBody.clientWidth + 2 || graph.H * graph.zoom > astBody.clientHeight + 2);
+    mini.hidden = !show;
+    if (!show) {
+      graph.mini = null;
+      return;
+    }
+    const scale = Math.min(168 / graph.W, 84 / graph.H);
+    const map = svg("svg", {
+      width: Math.max(24, Math.round(graph.W * scale)), height: Math.max(12, Math.round(graph.H * scale)),
+      viewBox: `0 0 ${graph.W} ${graph.H}`, preserveAspectRatio: "none",
+    });
+    const d = [...graph.svg.querySelectorAll(".ag-edge")].map((p) => p.getAttribute("d")).join("");
+    map.append(svg("path", { class: "mm-edge", d }));
+    for (const g of graph.visible) {
+      map.append(svg("rect", { class: `mm-node k-${g.kind}`, x: g.x - g.w / 2, y: g.y, width: g.w, height: AG.nodeH, rx: 6 }));
+    }
+    const view = svg("rect", { class: "mm-view" });
+    map.append(view);
+    mini.replaceChildren(map);
+    graph.mini = { map, view };
+    drawMinimapView();
+  }
+
+  function drawMinimapView() {
+    const m = graph.mini;
+    if (!m || !graph.svg) return;
+    const z = graph.zoom;
+    const box = astBody.getBoundingClientRect(), at = graph.svg.getBoundingClientRect();
+    const x = Math.max(0, (box.left - at.left) / z);   // the diagram's point at the panel's top-left corner
+    const y = Math.max(0, (box.top - at.top) / z);
+    m.view.setAttribute("x", x);
+    m.view.setAttribute("y", y);
+    m.view.setAttribute("width", Math.min(graph.W - x, astBody.clientWidth / z));
+    m.view.setAttribute("height", Math.min(graph.H - y, astBody.clientHeight / z));
+  }
+
+  astBody.addEventListener("scroll", drawMinimapView, { passive: true });   // scroll events come at most once a frame
+
+  (() => {
+    const mini = $("#ast-minimap");
+    let dragging = false;
+    const goTo = (e) => {
+      if (!graph.mini) return;
+      const r = graph.mini.map.getBoundingClientRect();
+      const cx = ((e.clientX - r.left) / r.width) * graph.W;
+      const cy = ((e.clientY - r.top) / r.height) * graph.H;
+      astBody.scrollLeft = cx * graph.zoom - astBody.clientWidth / 2;
+      astBody.scrollTop = cy * graph.zoom - astBody.clientHeight / 2;
+    };
+    mini.addEventListener("pointerdown", (e) => {
+      e.preventDefault();
+      dragging = true;
+      mini.setPointerCapture(e.pointerId);
+      goTo(e);
+    });
+    mini.addEventListener("pointermove", (e) => { if (dragging) goTo(e); });
+    mini.addEventListener("pointerup", () => { dragging = false; });
+    mini.addEventListener("pointercancel", () => { dragging = false; });
+  })();
+
+  // Drag the diagram to move around (a mouse or pen; touch screens already scroll natively).
+  // A drag must not count as a click, which would jump the editor to a line.
+  (() => {
+    let pan = null;
+    let swallowClick = false;
+    astBody.addEventListener("pointerdown", (e) => {
+      if (!astBody.classList.contains("is-graph") || e.button !== 0 || e.pointerType === "touch") return;
+      if (e.target.closest(".ag-toggle")) return;
+      pan = { id: e.pointerId, x: e.clientX, y: e.clientY, left: astBody.scrollLeft, top: astBody.scrollTop, moved: false };
+    });
+    astBody.addEventListener("pointermove", (e) => {
+      if (!pan || e.pointerId !== pan.id) return;
+      const dx = e.clientX - pan.x, dy = e.clientY - pan.y;
+      if (!pan.moved) {
+        if (Math.hypot(dx, dy) < 4) return;
+        pan.moved = true;
+        astBody.setPointerCapture(pan.id);
+        astBody.classList.add("is-panning");
+        if (graph.mode === "auto") graph.mode = "manual";
+      }
+      astBody.scrollLeft = pan.left - dx;
+      astBody.scrollTop = pan.top - dy;
+    });
+    const end = (e) => {
+      if (!pan || e.pointerId !== pan.id) return;
+      if (pan.moved) {
+        swallowClick = true;
+        setTimeout(() => { swallowClick = false; }, 0);
+      }
+      astBody.classList.remove("is-panning");
+      pan = null;
+    };
+    astBody.addEventListener("pointerup", end);
+    astBody.addEventListener("pointercancel", end);
+    astBody.addEventListener("click", (e) => {
+      if (!swallowClick) return;
+      swallowClick = false;
+      e.stopPropagation();
+      e.preventDefault();
+    }, true);
+  })();
+
+  // Ctrl/⌘ + wheel (or a trackpad pinch) zooms at the pointer. A plain wheel scrolls; when the
+  // tree is wide but short, it scrolls sideways so the wheel still gets you somewhere.
+  astBody.addEventListener("wheel", (e) => {
+    if (!astBody.classList.contains("is-graph")) return;
+    const delta = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaY;
+    if (e.ctrlKey || e.metaKey) {
+      e.preventDefault();
+      const box = astBody.getBoundingClientRect();
+      setGraphZoom(graph.zoom * Math.exp(-delta * 0.0018), { x: e.clientX - box.left, y: e.clientY - box.top });
+    } else if (!e.shiftKey && Math.abs(e.deltaY) > Math.abs(e.deltaX)
+               && astBody.scrollHeight <= astBody.clientHeight && astBody.scrollWidth > astBody.clientWidth) {
+      e.preventDefault();
+      astBody.scrollLeft += delta;
+      if (graph.mode === "auto") graph.mode = "manual";
+    }
+  }, { passive: false });
+
+  $("#ast-zoom-in").addEventListener("click", () => setGraphZoom(graph.zoom * 1.25));
+  $("#ast-zoom-out").addEventListener("click", () => setGraphZoom(graph.zoom / 1.25));
+  $("#ast-zoom-fit").addEventListener("click", fitGraph);
+  $("#panel-ast").addEventListener("keydown", (e) => {
+    if (state.astView !== "graph" || !graph.svg || e.ctrlKey || e.metaKey || e.altKey) return;
+    if (e.key === "+" || e.key === "=") setGraphZoom(graph.zoom * 1.25);
+    else if (e.key === "-" || e.key === "_") setGraphZoom(graph.zoom / 1.25);
+    else if (e.key === "0") fitGraph();
+    else return;
+    e.preventDefault();
+  });
+
+  // Full screen: the AST panel alone fills the screen (Esc leaves it). Where the browser refuses
+  // real full screen (an embedded browser, an iPhone), the panel fills the window instead.
+  const astPanel = $("#panel-ast");
+  const fullscreenButton = $("#ast-fullscreen");
+
+  function syncFullscreenButton() {
+    const on = document.fullscreenElement === astPanel || astPanel.classList.contains("is-maximized");
+    fullscreenButton.setAttribute("aria-pressed", String(on));
+    fullscreenButton.setAttribute("aria-label", on ? "Exit full screen" : "Full screen");
+    fullscreenButton.title = on ? "Exit full screen (Esc)" : "Full screen";
+  }
+
+  function setAstMaximized(on) {
+    astPanel.classList.toggle("is-maximized", on);
+    syncFullscreenButton();
+  }
+
+  function leaveAstFullscreen() {
+    if (document.fullscreenElement === astPanel) document.exitFullscreen().catch(() => {});
+    if (astPanel.classList.contains("is-maximized")) setAstMaximized(false);
+  }
+
+  fullscreenButton.addEventListener("click", async () => {
+    if (document.fullscreenElement === astPanel || astPanel.classList.contains("is-maximized")) return leaveAstFullscreen();
+    try {
+      if (!document.fullscreenEnabled) throw new Error("full screen is not available");
+      // Some embedded browsers neither grant nor refuse the request, so don't wait for long.
+      await Promise.race([astPanel.requestFullscreen(), new Promise((_, no) => setTimeout(() => no(new Error("no answer")), 600))]);
+    } catch {
+      if (document.fullscreenElement !== astPanel) setAstMaximized(true);
+    }
+  });
+  document.addEventListener("fullscreenchange", () => {
+    if (document.fullscreenElement === astPanel) astPanel.classList.remove("is-maximized");
+    syncFullscreenButton();
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && astPanel.classList.contains("is-maximized")) setAstMaximized(false);
+  });
+
+  // Re-zoom when the panel changes size: a window resize, the pane divider, full screen, or the
+  // tab becoming visible for the first time after a run.
+  new ResizeObserver(() => {
+    if (state.astView !== "graph" || !graph.svg || !astBody.clientWidth) return;
+    if (graph.pending || graph.mode === "auto") autoGraphView();
+    else if (graph.mode === "fit") fitGraph();
+    else drawMinimap();
+  }).observe(astBody);
 
   // ------------------------------------------------------- warnings (semantic)
 
@@ -1146,7 +1714,7 @@
     });
     root.addEventListener("mouseleave", () => editor.unmark("hover"));
     root.addEventListener("click", (e) => {
-      if (e.target.closest("button")) return;
+      if (e.target.closest("button, [role='button']")) return;
       const row = e.target.closest("[data-line]");
       const line = row && Number(row.dataset.line);
       if (line) editor.reveal(line);

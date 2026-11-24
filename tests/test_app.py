@@ -57,6 +57,14 @@ class AppTests(unittest.TestCase):
         self.assertEqual(r["output"], ["42"])
         self.assertTrue(r["trace"])                        # the page's step-through view
 
+    def test_ast_children_keep_grammar_order(self):
+        # The AST graph draws children in the order the JSON lists them, so it must not be sorted.
+        src = "for i = 0; i < 3; i += 1 { if i { print i; } else { print 0; } }"
+        loop = self.client.post("/run", json={"source": src}).get_json()["ast"]["statements"][0]
+        self.assertEqual(list(loop), ["type", "line", "init", "condition", "update", "body"])
+        branch = loop["body"]["statements"][0]
+        self.assertEqual(list(branch), ["type", "line", "condition", "then_body", "else_body"])
+
     def test_run_includes_symbols_warnings_and_ir(self):
         r = self.client.post("/run", json={"source": "x = 1;\nunused = 2;\nprint x;"}).get_json()
         self.assertEqual([g["name"] for g in r["symbols"]["globals"]], ["x", "unused"])
@@ -198,12 +206,20 @@ class PagesTests(unittest.TestCase):
         resp = self.client.get("/")
         self.assertEqual(resp.status_code, 200)
         html = resp.get_data(as_text=True)
-        for text in ("Bytecode", "Compiler", "[Pipeline/list]", "Ishu Raj", "24BDS0255", "Muthunagai",
+        for text in ("Bytecode", "Compiler", "[Pipeline/list]", "[Source]", "@ir1101",
                      'href="/play"', 'href="/learn"', "landing.js", 'id="landing-data"'):
             with self.subTest(text=text):
                 self.assertIn(text, html)
         for chapter in CHAPTERS:   # the pipeline list links every chapter
             self.assertIn(f'href="/learn/{chapter.slug}"', html)
+
+    def test_every_page_credits_the_author(self):
+        pages = ["/", "/learn", f"/learn/{CHAPTERS[0].slug}", "/learn/language/first-program", "/nope"]
+        for page in pages:
+            with self.subTest(page=page):
+                html = self.client.get(page, headers={"Accept": "text/html"}).get_data(as_text=True)
+                self.assertIn('href="https://github.com/ir1101"', html)   # the footer's "Built by @ir1101"
+                self.assertIn(">@ir1101<", html)
 
     def test_landing_demo_program_runs(self):
         from app import LANDING_DEMO

@@ -610,6 +610,86 @@ code, pre, kbd, .CodeMirror, .panel-scroll, .pipeline, .select, .editor-fallback
 }
 .ast-text { color: var(--text); }
 
+/* AST graph: the syntax tree as a diagram (app.js, "AST: graph"). */
+
+.ast-stage { position: relative; display: flex; flex-direction: column; flex: 1; min-height: 0; }
+
+.zoom-controls { display: inline-flex; align-items: center; gap: 2px; padding-left: 6px; border-left: 1px solid var(--border); }
+.btn-icon { display: inline-grid; place-items: center; width: 28px; padding: 0; }
+.zoom-level { min-width: 52px; padding: 0 6px; font: 500 0.75rem/1 var(--font-mono); font-variant-numeric: tabular-nums; }
+#ast-fullscreen[aria-pressed="true"] { color: var(--accent); }
+
+#ast-body.is-graph {
+  display: flex;               /* with the diagram's auto margins: centred while it fits, scrollable once it doesn't */
+  padding: 0;
+  cursor: grab;
+  overscroll-behavior: contain;
+}
+#ast-body.is-graph.is-panning { cursor: grabbing; }
+.ag-svg { display: block; flex: none; align-self: flex-start; margin: 0 auto; user-select: none; -webkit-user-select: none; }
+.ag-svg text { font-variant-ligatures: none; }   /* show "<=" as typed, not as one glyph */
+
+.ag-edge { fill: none; stroke: #5c5c5c; stroke-width: 1.25; }
+.ag-label rect { fill: var(--surface); }
+.ag-label text { fill: var(--muted); font: 400 10px var(--font-mono); }
+
+.ag-node { cursor: pointer; }
+.ag-box { fill: var(--surface-2); stroke: var(--border-strong); stroke-width: 1; transition: fill 120ms var(--ease), stroke 120ms var(--ease); }
+.ag-stack { fill: var(--surface); stroke: var(--border-strong); stroke-width: 1; }
+.ag-node:hover > .ag-box { fill: var(--surface-3); stroke: var(--accent-line); }
+.ag-node.is-root > .ag-box { stroke: var(--accent-line); }
+.ag-type { fill: var(--syn-keyword); font: 500 11px var(--font-mono); }
+.ag-type.is-solo { font-size: 12px; font-weight: 600; }
+.ag-detail { fill: var(--text); font: 600 13px var(--font-mono); }
+.k-op .ag-type { fill: var(--syn-op); }
+.k-call .ag-type { fill: var(--syn-call); }
+.k-num .ag-type, .k-var .ag-type { fill: var(--muted); }
+.k-num .ag-detail { fill: var(--syn-number); }
+
+.ag-toggle { cursor: pointer; outline: none; }
+.ag-hit { fill: transparent; }
+.ag-knob { fill: var(--surface-3); stroke: var(--border-strong); stroke-width: 1; transition: stroke 120ms var(--ease), fill 120ms var(--ease); }
+.ag-glyph { stroke: var(--text); stroke-width: 1.5; stroke-linecap: round; }
+.ag-count { fill: var(--text); font: 500 10px var(--font-mono); }
+.ag-toggle:hover .ag-knob { fill: var(--surface-2); stroke: var(--accent); }
+.ag-toggle:focus-visible .ag-knob { stroke: var(--accent); stroke-width: 2; }
+.is-folded > .ag-toggle .ag-knob { stroke: var(--accent-line); }
+
+.ast-minimap {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  padding: 4px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: rgba(28, 28, 28, 0.92);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.45);
+  line-height: 0;
+  cursor: pointer;
+  touch-action: none;
+}
+.ast-minimap svg { display: block; }
+.mm-edge { fill: none; stroke: #4d4d4d; stroke-width: 1; vector-effect: non-scaling-stroke; }
+.mm-node { fill: #5d5d5d; }
+.mm-node.k-stmt { fill: #7d6bbd; }
+.mm-node.k-op { fill: #5f8aa5; }
+.mm-node.k-num { fill: #a8805c; }
+.mm-view { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+
+.ast-graph-hint {
+  margin: 0;
+  padding: 7px 16px;
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font: 400 0.75rem/1.4 var(--font-sans);
+}
+.ast-graph-hint kbd { padding: 0 4px; border: 1px solid var(--border-strong); border-radius: 3px; font-size: 0.6875rem; }
+
+#panel-ast:fullscreen { background: var(--surface); }
+#panel-ast.is-maximized { position: fixed; inset: 0; z-index: 40; background: var(--surface); }   /* below the toasts */
+html:has(#panel-ast.is-maximized) { overflow: hidden; }
+#panel-ast:fullscreen .ast-minimap, #panel-ast.is-maximized .ast-minimap { right: 20px; bottom: 20px; }
+
 /* --------------------------------------------------------------- Bytecode */
 
 .bc-list { margin: 0; padding: 0; list-style: none; font-variant-numeric: tabular-nums; }

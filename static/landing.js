@@ -365,7 +365,7 @@
     $("#boot-enter").hidden = true;
     const wait = (ms) => new Promise((r) => setTimeout(r, reduceMotion ? 0 : ms));
 
-    addLine([[`MINILANG-V1 BIOS (C) ${data.course}`, "hi"]]);
+    addLine([["MINILANG-V1 BIOS (C) ", "hi"], [`@${data.author || ""}`, "hi handle"]]);
     addLine([["PRESS ANY KEY ...... SKIP"]]);
     addLine([[""]]);
     addLine([["POWER-ON SELF TEST: ", "hi"], [SELF_TEST, "hi code"]]);

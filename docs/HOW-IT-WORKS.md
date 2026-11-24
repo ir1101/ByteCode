@@ -1,6 +1,6 @@
-# MiniLang: viva notes
+# How MiniLang works
 
-A one-stop sheet for presenting the project: what it is, one program followed through every stage, every file in two lines, the questions examiners tend to ask, and a five-minute demo.
+A quick tour of the project: what it is, one program followed through every stage, every file in two lines, answers to common questions, and a five-minute walk through the website.
 
 ## The project in 30 seconds
 
@@ -8,8 +8,8 @@ MiniLang is a small programming language and a complete compiler for it, written
 
 | | |
 |---|---|
-| Python (compiler and website) | 3,959 lines (not counting blank lines) |
-| Unit tests | 339, run by GitHub Actions on every push |
+| Python (compiler and website) | 3,962 lines (not counting blank lines) |
+| Unit tests | 341, run by GitHub Actions on every push |
 | Bytecode instructions | 30 opcodes |
 | Game | 13 challenges + 8 bug hunts, 63 stars |
 | Learning section | 12 language lessons, 8 compiler chapters |
@@ -124,17 +124,17 @@ B1  constants in: x=42
 
 | File | What it does |
 |---|---|
-| `static/app.js` | Renders the playground: tokens, AST, symbols, the CFG drawn in SVG, bytecode, the step-through, live checking and the input box. The browser never compiles anything itself. |
+| `static/app.js` | Renders the playground: tokens, the AST and the CFG drawn in SVG, symbols, bytecode, the step-through, live checking and the input box. The browser never compiles anything itself. |
 | `static/game.js` | The game layer: level picker, stars, XP, ranks, achievements and toasts. Progress is kept in `localStorage`. |
 | `static/landing.js` | The landing page: a boot screen that runs a real self-test, draggable windows, and a stack machine replaying a real trace. |
 | `static/guide.js` | Makes the learning section's examples editable, with syntax colours. Re-runs them through `/run`, or `/stage` for a chapter demo. |
 | `static/fx.js` | The bracket cursor and scrambling text. Only with a mouse; off with reduced motion. |
 | `static/theme.css`, `site.css`, `style.css` | The shared dark "desktop" theme, the landing and learning pages, and the playground. |
-| `tests/` | 339 tests: every stage, recovery, analyses, same behaviour with the optimizer on and off, levels, the website, every lesson example and every chapter demo. |
+| `tests/` | 341 tests: every stage, recovery, analyses, same behaviour with the optimizer on and off, levels, the website, every lesson example and every chapter demo. |
 
-## Questions examiners ask
+## Common questions
 
-**Where is your semantic analysis?**
+**Where does semantic analysis happen?**
 `semantic.py`, between the parser and the code generator. It builds symbol tables in two passes, rejects undefined names and wrong argument counts, and warns about likely mistakes. The playground's Symbols tab shows its tables.
 
 **Why recursive descent and not a parser generator?**
@@ -146,10 +146,10 @@ Each precedence level is a grammar rule and a method (`or` → `and` → `not` �
 **What is a basic block? A control-flow graph?**
 A basic block is a straight run of instructions entered only at the top and left only at the bottom. Leaders are the first instruction, every label, and every instruction after a jump. The CFG joins each block to the blocks that can run next; loops appear as back edges.
 
-**Explain constant propagation.**
+**How does constant propagation work?**
 A forward data-flow analysis (Kildall's algorithm). Each block's entry state is the meet of its predecessors' exit states, keeping a variable only if every path agrees on its value. It iterates to a fixed point, and constant branches prune dead edges. The optimizer then replaces proven constant reads with literals.
 
-**Explain liveness. What is a dead store?**
+**What are liveness and dead stores?**
 A backward analysis: `live_in(B) = use(B) ∪ (live_out(B) − def(B))`, where `live_out` is the union over successors. A store to a variable that isn't live right after it is dead. Semantic analysis warns about it, and the optimizer deletes it if its right-hand side can't fail.
 
 **Forward vs backward, may vs must?**
@@ -160,6 +160,9 @@ Constant propagation and definite assignment run forward, liveness runs backward
 
 **What is tail-call optimization?**
 `return f(x)` leaves the caller nothing to do, so the peephole pass turns `CALL` followed by `RET` into `TAIL_CALL`, which reuses the current frame. Tail recursion then runs in constant stack space: `sum(5000, 0)` works, but fails with `--no-opt`.
+
+**How does the playground draw the syntax tree?**
+`app.js` lays it out with a tidy-tree algorithm. Each subtree is laid out on its own, then siblings are pushed apart until their contours (the left and right edge of every level) no longer overlap. A parent sits centred over its children, and a statement list keeps one column per statement in source order. It is drawn as SVG, so it stays sharp at any zoom.
 
 **What is back-patching?**
 A forward jump is emitted before its target exists, with a placeholder; its address is remembered and filled in once the target is known. MiniLang uses it for `if`, loops, `break`/`continue` and function calls.
@@ -182,13 +185,13 @@ Assigning to a name inside a function makes it local. So `total = total + x` rea
 **How is an infinite loop stopped?**
 The VM counts steps and stops at a limit (1,000,000 in the playground), along with limits on printed lines and call depth, so code sent from a browser can't hang the server.
 
-## A five-minute demo
+## A five-minute tour
 
-1. **Landing page** (`python app.py`, open `http://127.0.0.1:5000`). The boot screen's self-test is a real compile and run of `print 6 * 7;`. Point at the stack machine replaying a real trace.
-2. **Playground → Learn's IR chapter, "Open in playground"**, or pick `dataflow.ml`: show the Tokens, AST and Symbols tabs, then the IR tab's control-flow graph and its Optimized view.
-3. **Bytecode tab**: toggle Optimized / Before optimizing, and point at `TAIL_CALL`.
-4. **Output tab**: step through `functions.ml` to show frames growing in the recursion.
-5. **Errors**: type `whiel x < 3 {`, then `count = 1; print cont;`, then `x = 5 && 3;`. Show the live underline and the hint each one gets before pressing Run: "did you mean 'while'", "did you mean 'count'", "MiniLang writes 'and'".
+1. **Landing page** (`python app.py`, open `http://127.0.0.1:5000`). The boot screen's self-test is a real compile and run of `print 6 * 7;`, and the stack machine in the middle replays a real trace.
+2. **Playground → Learn's IR chapter, "Open in playground"**, or pick `dataflow.ml`: look through the Tokens tab, the AST tab's tree diagram (fold a node, zoom in, open it full screen) and the Symbols tab, then the IR tab's control-flow graph and its Optimized view.
+3. **Bytecode tab**: toggle Optimized / Before optimizing, and find the `TAIL_CALL`.
+4. **Output tab**: step through `functions.ml` and watch the frames grow in the recursion.
+5. **Errors**: type `whiel x < 3 {`, then `count = 1; print cont;`, then `x = 5 && 3;`. Each gets a live underline and a hint before you press Run: "did you mean 'while'", "did you mean 'count'", "MiniLang writes 'and'".
 6. **Levels**: open B8 "Type trouble" and fix it for ★★★.
 7. **Learn**: a lesson's runnable example, then a chapter's source quote with its demo.
 8. **Tests**: `python -m unittest discover -s tests -t . -v`, all green.

@@ -42,20 +42,23 @@ from vm import BINARY_OPS
 ROOT = os.path.dirname(os.path.abspath(__file__))
 EXAMPLES_DIR = os.path.join(ROOT, "examples")
 DEFAULT_EXAMPLE = "demo.ml"  # variables, arithmetic, if/else, while and print
-REPOSITORY = "https://github.com/ir1101/ByteCode"
+GITHUB_USER = "ir1101"
+REPOSITORY = f"https://github.com/{GITHUB_USER}/ByteCode"
 # The program the landing page's stack machine runs (through /run, like any other).
 LANDING_DEMO = "n = 1;\nfor i = 1; i <= 5; i += 1 {\n    n *= i;\n}\nprint n;\n"
 
+# Shown in every page's footer, the landing page's Source window and its boot screen.
 PROJECT = {
-    "course": "BCSE307P · Compiler Lab",
-    "guide": "Prof. Muthunagai S U",
-    "team": [("Ishu Raj", "24BDS0255"), ("Parth Bagwe", "24BDS0284"),
-             ("Siddiqa", "24BCE2847"), ("Tejas Sinha", "24BDS0203")],
+    "author": GITHUB_USER,
+    "profile": f"https://github.com/{GITHUB_USER}",
     "repository": REPOSITORY,
 }
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 1_000_000  # reject request bodies over 1 MB
+# Keep keys in the order they were built, so an AST node's children arrive in grammar order
+# (condition, then_body, else_body) and the playground draws them that way.
+app.json.sort_keys = False
 app.jinja_env.globals["run_example"] = run_guide_example   # the lessons' example macro runs code with it
 app.jinja_env.globals.update(stage_view=stage_view, excerpt=excerpt)   # the chapters' demos and quotes
 app.jinja_env.filters["slug"] = slug

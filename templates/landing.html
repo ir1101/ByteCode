@@ -120,11 +120,16 @@
       <p class="about-text">Every stage is on show: tokens, syntax tree, symbol table, types, three-address code, bytecode, and a stack machine you can step through one instruction at a time.</p>
     {% endcall %}
 
-    {% call window("team", "Team") %}
-      <dl class="readout team">
-        {% for name, reg in project.team %}<dt data-hover-scramble="self">{{ name }}</dt><dd>{{ reg }}</dd>{% endfor %}
-        <dt class="caps">Guide</dt><dd>{{ project.guide }}</dd>
+    {% call window("source", "Source") %}
+      <dl class="readout">
+        <dt>Author</dt><dd><a class="handle" href="{{ project.profile }}" rel="noopener">@{{ project.author }}</a></dd>
+        <dt>Repository</dt><dd class="handle">{{ project.repository | replace("https://github.com/", "") }}</dd>
+        <dt>Language</dt><dd>Python 3</dd>
       </dl>
+      <div class="win-actions">
+        <span class="chip">{{ stats.tests }} tests</span>
+        <a class="link-btn" href="{{ project.repository }}" rel="noopener"><span data-hover-scramble>Read the code</span><span class="arrow" aria-hidden="true"><b>↗</b></span></a>
+      </div>
     {% endcall %}
 
     {% call window("levels", "Levels") %}
@@ -143,7 +148,7 @@
   <button type="button" class="boot-enter" id="boot-enter">Press <span class="boot-key">Enter</span></button>
 </div>
 
-<script type="application/json" id="landing-data">{{ {"demo": demo, "max_stars": stats.max_stars, "course": project.course} | tojson }}</script>
+<script type="application/json" id="landing-data">{{ {"demo": demo, "max_stars": stats.max_stars, "author": project.author} | tojson }}</script>
 {% endblock %}
 
 {% block scripts %}

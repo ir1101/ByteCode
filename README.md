@@ -1,5 +1,7 @@
 # MiniLang
 
+A personal project by [@ir1101](https://github.com/ir1101).
+
 A small compiler written in Python 3 using only the standard library, with no parser generators.
 The web playground adds Flask, which is its only dependency. Source code goes through every
 classic compiler stage:
@@ -20,7 +22,7 @@ The website has three parts:
 - the **playground** (`/play`), where every stage is on show, with a game of 21 levels;
 - a **learning section** (`/learn`), with 12 lessons that teach the language and 8 chapters that explain the compiler from its own source.
 
-For presenting the project, [`docs/VIVA.md`](docs/VIVA.md) follows one program through every stage, describes every file, and answers the questions examiners usually ask.
+[`docs/HOW-IT-WORKS.md`](docs/HOW-IT-WORKS.md) follows one program through every stage, describes every file in two lines, and answers common questions about the design.
 
 ## Screenshots
 
@@ -49,7 +51,7 @@ The web playground needs Flask once: `python -m pip install flask`. After that t
 
 **Sharing on a local network.** `python app.py --lan` listens on every network interface and prints addresses like `http://172.20.10.2:5000`. Anyone on the same Wi-Fi or hotspot can open that address, as long as the server keeps running on your machine.
 - **Windows firewall:** it may ask the first time; allow Python.
-- **Campus Wi-Fi:** networks often block device-to-device traffic. A phone hotspot works.
+- **Shared Wi-Fi:** office, café and other public networks often block device-to-device traffic. A phone hotspot works.
 - **Safety:** submitted code only runs inside the MiniLang VM, which can't touch files or the network and is limited in steps, output and call depth. Still, only use `--lan` on networks you trust.
 
 ## Website (`app.py`)
@@ -69,23 +71,23 @@ The web playground needs Flask once: `python -m pip install flask`. After that t
 **The landing page** is built on real data:
 - A **boot screen** runs a power-on self test: it compiles and runs `print 6 * 7;` through `/run`, and each stage reports what it actually produced. It shows once per browser session; any key skips it, and **B** reboots it.
 - In the middle, a **stack machine** replays the VM trace of a small factorial program from `/run`. Its operand stack is drawn as a tower, next to a window with the source, the bytecode and the program counter, the variables and the output. **Space** or the window's button pauses it, and it starts paused if the system asks for reduced motion.
-- **Windows** list the pipeline (each stage links to its chapter), the team, the levels with your stars, and the learning section. On a wide screen you can drag a window by its grip or move it with the arrow keys; positions snap to the grid and are remembered, and **R** resets them. The **+** button collapses a window.
+- **Windows** list the pipeline (each stage links to its chapter), the source on GitHub, the levels with your stars, and the learning section. On a wide screen you can drag a window by its grip or move it with the arrow keys; positions snap to the grid and are remembered, and **R** resets them. The **+** button collapses a window.
 - **Readouts** show project numbers counted from the code itself (Python lines, unit tests, opcodes, levels), the compiler's status and ping, and the keyboard shortcuts: **P** playground, **L** learn, **G** levels.
 
 Below 1100px wide the windows stack into one scrolling column.
 
 ### Playground (`/play`)
 
-Laid out like Compiler Explorer. The code editor (CodeMirror, loaded from a CDN) is on the left, with an **Input** drawer under it for the numbers `input` statements read; it opens by itself when the code uses `input`. The right side has one tab per pipeline stage:
+Laid out like Compiler Explorer. The code editor (CodeMirror, served from `static/vendor/`) is on the left, with an **Input** drawer under it for the numbers `input` statements read; it opens by itself when the code uses `input`. The right side has one tab per pipeline stage:
 
 - **Tokens:** a table of each token's type, value and line.
-- **AST:** a collapsible tree, or the same text dump that `--debug` prints.
+- **AST:** the syntax tree drawn as a diagram: a box per node, with a line to each child labelled with the field it fills (`left`, `condition`, `then_body`…). Statements hang left to right in source order. Drag to move around, Ctrl + scroll (or pinch) to zoom, fold any subtree with the button under its node, or show it full screen; a minimap shows where you are in a large tree, and hovering a node highlights its line in the editor. The same tree is also available as a collapsible list, or as the text dump that `--debug` prints.
 - **Symbols:** the warnings from semantic analysis, then the symbol table with each name's **inferred type**: every global, and for each function its parameters, locals and the globals it reads, under a typed signature such as `average(xs: list) → number`. Warning lines are also marked amber in the editor.
 - **IR:** the three-address code split into basic blocks, drawn as a control-flow graph. Fall-through edges run straight down, jumps on the right, and loop back-edges dashed on the left. Each block lists its **live variables** on entry and exit, and dead stores are tagged. The **Optimized** toggle shows the code after constant propagation, with the stores that dead-store elimination removes struck through.
 - **Bytecode:** the numbered instructions, with clickable jump targets and a view of the code before the optimizer ran.
 - **Output:** what the program printed and which input values it read, plus a step-through of execution in the style of Python Tutor. It shows the operand stack, the global frame and each call frame at every VM step.
 
-Hovering a row in any tab highlights its source line. Errors appear in a red box in Output, every one with its line number. If the CDN can't be reached, the editor falls back to a plain text box and everything still works.
+Hovering a row in any tab highlights its source line. Errors appear in a red box in Output, every one with its line number. If CodeMirror can't load, the editor falls back to a plain text box and everything still works.
 
 **Checking as you type.** A moment after you stop typing, the editor sends the code to `/lint`, which runs only the lexer, parser, semantic analysis and type checker. Problems get a wavy underline (red for errors, amber for warnings) and a dot in the gutter; hover either to read the message. The pill above the editor counts them, and clicking it jumps to the first. In a level, the level's inputs count as defined.
 
@@ -471,8 +473,8 @@ The chapter pages also show where the stage sits in the pipeline and a contents 
 | `levels.py` | game levels, the test harness and star scoring |
 | `templates/`, `static/` | the pages, the shared theme and the scripts (see [Website](#website-apppy)) |
 | `static/vendor/` | local copies of CodeMirror 5.65.16 (MIT) and the three fonts (SIL Open Font License), with their licence files |
-| `tests/` | 339 unit tests: every stage, error recovery and hints, semantic analysis, type checking, input, the IR and its analyses, the optimizer (including same-behaviour checks), tail calls, arrays, the API, the levels, the website, every example in the language lessons, and every quote and demo in the compiler chapters |
+| `tests/` | 341 unit tests: every stage, error recovery and hints, semantic analysis, type checking, input, the IR and its analyses, the optimizer (including same-behaviour checks), tail calls, arrays, the API, the levels, the website, every example in the language lessons, and every quote and demo in the compiler chapters |
 | `examples/` | `demo.ml`, `optimize.ml`, `functions.ml` (recursion, for, break/continue), `arrays.ml` (lists, `%`, a sieve), `dataflow.ml` (liveness, dead stores, `+=`, tail calls) |
-| `docs/` | the project report (Word and PDF, on the course template), `VIVA.md` (notes for presenting the project) and the screenshots above |
+| `docs/` | `HOW-IT-WORKS.md` (a tour of the compiler, file by file) and the screenshots above |
 | `.github/workflows/tests.yml` | GitHub Actions: runs the test suite on every push |
 | `requirements.txt` | Flask, the only dependency (for the web playground) |

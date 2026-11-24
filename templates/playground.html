@@ -139,20 +139,39 @@
       <div class="panel" role="tabpanel" id="panel-ast" aria-labelledby="tab-ast" tabindex="0" hidden>
         <div class="panel-toolbar" id="ast-toolbar" hidden>
           <div class="segmented" role="group" aria-label="AST view">
-            <button type="button" class="seg" data-ast-view="tree" aria-pressed="true">Tree</button>
+            <button type="button" class="seg" data-ast-view="graph" aria-pressed="true">Graph</button>
+            <button type="button" class="seg" data-ast-view="tree" aria-pressed="false">Tree</button>
             <button type="button" class="seg" data-ast-view="text" aria-pressed="false">Text</button>
           </div>
-          <div class="toolbar-actions" id="ast-tree-actions">
-            <button type="button" class="btn-quiet" id="ast-expand">Expand all</button>
-            <button type="button" class="btn-quiet" id="ast-collapse">Collapse all</button>
+          <div class="toolbar-actions">
+            <span class="toolbar-actions" id="ast-tree-actions">
+              <button type="button" class="btn-quiet" id="ast-expand">Expand all</button>
+              <button type="button" class="btn-quiet" id="ast-collapse">Collapse all</button>
+            </span>
+            <span class="zoom-controls" id="ast-graph-actions" role="group" aria-label="Zoom">
+              <button type="button" class="btn-quiet btn-icon" id="ast-zoom-out" aria-label="Zoom out" title="Zoom out (−)">
+                <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M3.5 8h9" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+              </button>
+              <button type="button" class="btn-quiet zoom-level" id="ast-zoom-fit" title="Fit the whole tree (0)" aria-label="Zoom 100%. Fit the whole tree">100%</button>
+              <button type="button" class="btn-quiet btn-icon" id="ast-zoom-in" aria-label="Zoom in" title="Zoom in (+)">
+                <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M3.5 8h9M8 3.5v9" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+              </button>
+              <button type="button" class="btn-quiet btn-icon" id="ast-fullscreen" aria-label="Full screen" title="Full screen" aria-pressed="false">
+                <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M2.5 6V2.5H6M10 2.5h3.5V6M13.5 10v3.5H10M6 13.5H2.5V10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </button>
+            </span>
           </div>
         </div>
-        <div class="panel-scroll" id="ast-body">
-          <div class="empty">
-            <p class="empty-title">The syntax tree will appear here</p>
-            <p class="empty-text">The parser builds a tree of statements and expressions from the tokens. Hover over a node to see its source line.</p>
+        <div class="ast-stage">
+          <div class="panel-scroll" id="ast-body">
+            <div class="empty">
+              <p class="empty-title">The syntax tree will appear here</p>
+              <p class="empty-text">The parser builds a tree of statements and expressions from the tokens. Hover over a node to see its source line.</p>
+            </div>
           </div>
+          <div class="ast-minimap" id="ast-minimap" aria-hidden="true" hidden></div>
         </div>
+        <p class="ast-graph-hint" id="ast-graph-hint" hidden>Drag to move · <kbd>Ctrl</kbd> + scroll to zoom · click a node to find its line · <b>−</b> folds a subtree</p>
       </div>
 
       <!-- Symbols (semantic analysis) -->

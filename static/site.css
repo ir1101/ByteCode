@@ -34,7 +34,6 @@
 }
 .site-pills, .site-nav, .foot-links { display: flex; flex-wrap: wrap; gap: 8px; }
 .foot-credit { margin: 0; color: var(--muted); font-size: 0.75rem; letter-spacing: 0.02em; text-transform: uppercase; }
-.foot-credit strong { color: var(--text); font-weight: 500; }
 
 /* -------------------------------------------------------------- landing */
 
@@ -163,9 +162,9 @@
 .win-note { margin: 0; color: var(--muted); font-size: 0.875rem; line-height: 1.5; }
 .meter { position: relative; height: 4px; margin-top: 10px; border-radius: 2px; background: var(--surface-3); overflow: hidden; }
 .meter > span { position: absolute; inset: 0; background: var(--accent); transform-origin: left; transform: scaleX(var(--fill, 0)); transition: transform 300ms var(--ease); }
-.team { grid-template-columns: 1fr auto; }
-.team dt { color: var(--text); white-space: nowrap; }
-.team dd { color: var(--muted); }
+.handle, .readout dd.handle { text-transform: none; }   /* a GitHub handle keeps its own spelling in the uppercase readouts */
+a.handle { color: var(--text); text-decoration: underline; text-decoration-color: var(--accent-line); text-underline-offset: 3px; }
+a.handle:hover { color: var(--accent); }
 
 /* While a window is dragged it rises above the others. */
 .win.is-dragging { z-index: 20; box-shadow: 0 18px 44px rgba(0, 0, 0, 0.55); }
@@ -195,7 +194,7 @@
 .boot-log .ok { color: var(--ok); }
 .boot-log .fail { color: var(--danger); }
 .boot-log .hi { color: var(--text); }
-.boot-log .code { text-transform: none; }
+.boot-log .code, .boot-log .handle { text-transform: none; }
 .is-booting, .is-booting body { overflow: hidden; }
 .boot-enter { padding: 0; border: 0; background: none; color: var(--muted); font: inherit; text-transform: uppercase; }
 .boot-key { padding: 0 4px; background: var(--paper); color: var(--paper-ink); animation: blink 1s steps(1) infinite; }

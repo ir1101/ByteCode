@@ -84,7 +84,6 @@ button { cursor: pointer; }
 }
 
 /* Uppercase interface labels: the theme's voice. Prose stays in sentence case. */
-.caps { text-transform: uppercase; letter-spacing: 0.01em; }
 
 /* ------------------------------------------------------------------ pills */
 
